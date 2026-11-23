@@ -63,7 +63,7 @@ export class Athlete {
     const ax = b.axis.clone(), f = V().crossVectors(ax, UP).normalize(), p = b.p.clone().addScaledVector(ax, this.world.plane ? 0 : along), r = this.com.clone().sub(p); r.addScaledVector(ax, -r.dot(ax));
     // ángulo del cuerpo respecto a colgar recto (0 = debajo de la barra) y velocidad angular a partir de la velocidad que traía
     const th = Math.atan2(r.dot(f), -r.y), R = Math.max(.6, r.length()), tang = V().copy(f).multiplyScalar(Math.cos(th)).addScaledVector(UP, Math.sin(th));
-    this.yawFromRoot(); const fw = this.forward(); this.bar = { b, p, ax, f, th, w: this.vel.dot(tang) / R, R, face: fw.dot(f) >= 0 ? 1 : -1, turns: 0, t: 0, giants: 0 };
+    this.yawFromRoot(); const fw = this.forward(); this.bar = { b, p, ax, f, th, w: this.vel.dot(tang) / R, R, face: fw.dot(f) >= 0 ? 1 : -1, turns: 0, t: 0, giants: 0, turn: null, runPrev: true, halfs: 0 };
     this.state = 'bar'; this.L.set(0, 0, 0); this.hTwist = 0; this.wTwist = 0; this.emit('grab', { p: p.clone() }); this.barPose(1 / 240);
   }
   barPose(dt) {
@@ -71,12 +71,14 @@ export class Athlete {
     // arco al bajar y cuerpo hueco al subir, como en la barra de verdad; piernas juntas y estiradas
     let pose = { spine: [-6 * s * k * B.face, 0, 0], chest: [-4 * s * k * B.face, 0, 0], neck: [0, 0, 0], head: [6, 0, 0], uparmL: [-176, 0, 8], uparmR: [-176, 0, -8], forearmL: [-4, 0, 0], forearmR: [-4, 0, 0], handL: [0, 0, 0], handR: [0, 0, 0], thighL: [6 * s * k * B.face - 4, 0, 1], thighR: [6 * s * k * B.face - 4, 0, -1], shinL: [4, 0, 0], shinR: [4, 0, 0], footL: [46, 0, 0], footR: [46, 0, 0] };
     if (B.hold) pose = mix(pose, { ...pose, thighL: [-90, 0, 4], thighR: [-90, 0, -4], spine: [20, 0, 0], chest: [12, 0, 0] }, .8);   // recogido para girar alrededor
+    // media vuelta: suelta la mano derecha, gira sobre la izquierda y la vuelve a poner al otro lado
+    const tu = B.turn ? B.turn.t : 0, m = Math.sin(Math.PI * tu); if (m > 0) pose = mix(pose, { ...pose, uparmR: [-120, 0, -30], forearmR: [-30, 0, 0], uparmL: [-178, 0, 2], thighL: pose.thighL.map((v, i) => i ? v : v - 8), thighR: pose.thighR.map((v, i) => i ? v : v - 8) }, m);
     this.sk.setTarget(pose); this.sk.drive(dt, 16); this.sk.fk();
     // orientación: el cuerpo va a lo largo del radio, mirando hacia donde miraba al agarrarse
-    const yawQ = qYaw(Math.atan2(B.f.x * B.face, B.f.z * B.face)), rq = new Quaternion().setFromAxisAngle(B.ax, -B.th);
+    const ease = tu * tu * (3 - 2 * tu), yawQ = qYaw(Math.atan2(B.f.x * B.face, B.f.z * B.face) + Math.PI * ease), rq = new Quaternion().setFromAxisAngle(B.ax, -B.th);
     this.rootQ.copy(rq).multiply(yawQ);
     // manos fijas en la barra
-    const hm = V(); for (const n of ['handL', 'handR']) hm.add(V(0, -.07, 0).applyQuaternion(this.sk.q[IDX[n]]).add(this.sk.pos[IDX[n]])); hm.multiplyScalar(.5).applyQuaternion(this.rootQ);
+    const hm = V(); for (const n of ['handL', 'handR']) hm.addScaledVector(V(0, -.07, 0).applyQuaternion(this.sk.q[IDX[n]]).add(this.sk.pos[IDX[n]]), n === 'handL' ? .5 + .5 * m : .5 - .5 * m); hm.applyQuaternion(this.rootQ);   // en la media vuelta cuelga de la mano que no suelta
     this.rootP.copy(B.p).sub(hm); this.com.copy(this.sk.com).applyQuaternion(this.rootQ).add(this.rootP);
   }
   barStep(dt, inp) {
@@ -85,8 +87,11 @@ export class Athlete {
     const d = this.world.plane ? inp.mx * B.f.x : inp.mx * B.f.x + inp.mz * B.f.z, R = B.hold ? B.R * .78 : B.R, pump = d ? 3.6 * (Math.abs(B.w) > .25 ? Math.sign(B.w) : Math.sign(d)) * (Math.cos(B.th) > -.2 ? 1 : .35) : 0;   // mantener la flecha bombea a favor del balanceo (como el golpe de piernas)
     B.w += (-(g / R) * Math.sin(B.th) + pump * (this.T.spring || 1) - .12 * B.w) * dt; B.w = clamp(B.w, -9, 9); const th0 = B.th; B.th += B.w * dt;
     const turns = Math.floor((B.th + Math.PI) / (2 * Math.PI)) - Math.floor((th0 + Math.PI) / (2 * Math.PI)); if (turns) { B.giants++; this.emit('trick', { id: 'giant', n: B.giants }); }
+    // Shift (correr) en la barra: media vuelta colgado, para quedar mirando al otro lado
+    if (inp.run && !B.runPrev && !B.turn) { B.turn = { t: 0 }; this.emit('barturn', { p: B.p.clone() }); } B.runPrev = !!inp.run;
+    if (B.turn && (B.turn.t += dt / .5) >= 1) { B.turn = null; B.face = -B.face; B.halfs++; this.emit('trick', { id: 'barturn', n: 1 }); }
     this.barPose(dt);
-    if (this.pressed) this.releaseBar();
+    if (this.pressed && !B.turn) this.releaseBar();
   }
   releaseBar() {
     const B = this.bar, tang = V().copy(B.f).multiplyScalar(Math.cos(B.th)).addScaledVector(UP, Math.sin(B.th)), r = this.com.clone().sub(B.p);
@@ -505,7 +510,8 @@ export class Athlete {
     if (feetHit && this.vel.y < .5 && this.airT > .06) {
       const bv = feetHit.box?.v; if (bv) this.vel.sub(bv); const r = this.evaluate(feet, feetHit.surf, !!feetHit.box.launch, feetHit); if (bv) this.vel.add(bv);
       if (feetHit.box.launch && !r.fall) return this.spring(feetHit, r);
-      this.report(r);
+      if (!r.fall) { r.press = this.pressAt(feet, feetHit.box); if (r.press) { this.emit('trick', { id: 'press', n: 1 }); this.pressName = true; } }
+      this.report(r); this.pressName = false;
       if (r.fall) { this.com.y += feetHit.depth; this.rootP.y += feetHit.depth; return this.startFall(r); }
       this.com.y += feetHit.depth; this.rootP.y += feetHit.depth; feet.forEach(p => p.y += feetHit.depth);   // sin hundirse en el suelo al tocar
       const fc = V(); feet.forEach(p => fc.addScaledVector(p, .25)); const gy = this.world.ground(fc.x, fc.z, fc.y + .3, .1);
@@ -524,6 +530,20 @@ export class Athlete {
   ontoEdge(g) {
     const b = g.box, [lx, lz] = this.world.local(b, this.pos.x, this.pos.z), qx = clamp(lx, -b.h.x + .04, b.h.x - .04), qz = clamp(lz, -b.h.z + .04, b.h.z - .04); if (Math.hypot(qx - lx, qz - lz) > .32) return;
     this.pos.x = b.c.x + qx * b.cos + qz * b.sin; this.pos.z = b.c.z - qx * b.sin + qz * b.cos;
+  }
+  // Press («pinchar»): cae con media zapatilla en el borde de un obstáculo, la punta encima y el talón al aire.
+  // feet = [talón izq, punta izq, talón der, punta der]. Devuelve dónde quedó cada pie para dibujar la huella.
+  pressAt(feet, b) {
+    if (!b || b.top < .15 || b.launch || b.noStand) return null;
+    const dep = p => { const [lx, lz] = this.world.local(b, p.x, p.z); return Math.min(b.h.x - Math.abs(lx), b.h.z - Math.abs(lz)); }, prints = [];
+    for (const i of [0, 2]) {
+      const h = feet[i], t = feet[i + 1]; if (Math.abs(t.y - b.top) > .14) return null;
+      const dt = dep(t), dh = dep(h); if (dt < .025 || dh > -.01) return null;
+      const frac = dt / (dt - dh); if (frac < .25 || frac > .8) return null;   // ni solo la punta ni el pie entero: la mitad de la zapatilla
+      const edge = h.clone().lerp(t, 1 - frac); prints.push({ edge: [edge.x, b.top, edge.z], toe: [t.x, b.top, t.z], frac });
+    }
+    const e = prints[0].edge.map((v, k) => (v + prints[1].edge[k]) / 2);
+    return { p: e, prints, frac: (prints[0].frac + prints[1].frac) / 2, box: b };
   }
   // Muelle: lanza otra vez sin cortar la serie de trucos
   spring(h, r) {
@@ -575,7 +595,7 @@ export class Athlete {
     return (this.setup ? this.setup + ' + ' : '') + (own.length ? own.join(' + ') : tr.name());
   }
   report(r) {
-    const tr = this.trick, nm = this.trickName(), isT = !/^(J-step \+ )?Salto$|sin completar/.test(nm); this.combo = r.fall ? 0 : isT || this.vaultName ? this.combo + 1 : this.combo;
+    const tr = this.trick, nm0 = this.trickName(), nm = this.pressName ? (/^(J-step \+ )?Salto$/.test(nm0) ? 'Press' : nm0 + ' + Press') : nm0, isT = !/^(J-step \+ )?Salto$|sin completar/.test(nm); this.combo = r.fall ? 0 : isT || this.vaultName ? this.combo + 1 : this.combo;
     this.lastLanding = { ...r, label: GRADES[r.grade].label, lvl: GRADES[r.grade].lvl, name: this.vaultName ? this.vaultName + (isT && nm !== this.vaultOwn ? ' + ' + nm : '') : nm, isTrick: isT || !!this.vaultName, vault: this.vaultName, flip: tr.flip, side: tr.side, twistDeg: tr.twist, air: tr.air, apex: tr.apex, maxW: tr.maxW, dist: this.launchP ? Math.hypot(this.com.x - this.launchP.x, this.com.z - this.launchP.z) : 0, combo: this.combo, drop: this.launchP ? Math.max(0, this.launchP.y - this.com.y) : 0, travel: this.launchP ? (this.com.x - this.launchP.x) * this.tkFwd.x + (this.com.z - this.launchP.z) * this.tkFwd.z : 0 };
     this.emit('land', this.lastLanding);
   }

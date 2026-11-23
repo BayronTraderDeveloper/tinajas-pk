@@ -3,7 +3,7 @@ import { MOVES } from './control.js';
 import { VAULTS } from './vaults.js';
 import { Score } from './score.js';
 
-const SPIN = { flipB: /Backflip/, flipF: /Frontflip/, sideL: /Sideflip izq/, sideR: /Sideflip der/, twL: /\d+°/, twR: /\d+°/, double: /Doble (Back|Front|Side)|Triple/ };
+const SPIN = { flipB: /Backflip/, flipF: /Frontflip/, sideL: /Sideflip izq/, sideR: /Sideflip der/, twL: /\d+°/, twR: /\d+°/, double: /Doble (Back|Front|Side)|Triple/, press: /Press/ };
 // ¿El aterrizaje cuenta como ese truco? Caerse o dejarlo a medias no cuenta.
 export function matches(e, id) {
   if (e.lvl < 2 || /sin completar/.test(e.name)) return false; if (!id || id === 'any') return !!e.isTrick && !(e.vault && e.name === e.vault);
@@ -12,7 +12,7 @@ export function matches(e, id) {
 export function taskText(rules, tricks) {
   const t = rules.task, n = t.n; if (t.type === 'none') return ''; if (t.type === 'clean') return 'Todos los aterrizajes limpios'; if (t.type === 'stars') return 'Recoge todas las estrellas'; if (t.type === 'zone') return 'Aterriza un truco en cada objetivo'; if (t.type === 'combo') return `Encadena ${n} trucos o habilidades sin caer`;
   if (t.type === 'vault') return `Haz ${n} × ${t.id === 'any' ? 'habilidad' : VAULTS[t.id]?.name || 'habilidad'}`;
-  return `Completa ${n} × ${t.id === 'any' ? 'cualquier truco' : t.id === 'double' ? 'doble mortal' : tricks?.[t.id] || t.id}`;
+  return `Completa ${n} × ${t.id === 'any' ? 'cualquier truco' : t.id === 'double' ? 'doble mortal' : t.id === 'press' ? 'press (media zapatilla en el borde)' : tricks?.[t.id] || t.id}`;
 }
 // Qué pide un objetivo
 export const wantText = (id, tricks) => id === 'none' ? '' : id === 'any' ? 'un truco' : id === 'double' ? 'doble mortal' : VAULTS[id]?.name || tricks?.[id] || id;

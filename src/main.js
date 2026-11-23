@@ -22,6 +22,7 @@ import { Editor } from './editor.js';
 import { Viewer } from './viewer.js';
 import { Room, COLORS, newCode } from './net/room.js';
 import * as net from './net/nostr.js';
+import { PressMarks } from './press.js';
 import { damp } from './core/mathx.js';
 
 const canvas = document.getElementById('view'), ui = document.getElementById('ui'), edRoot = document.getElementById('editor');
@@ -30,7 +31,7 @@ renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadow
 await new Promise(r => setTimeout(r, 30));
 const tuning = makeTuning(); try { Object.assign(tuning, JSON.parse(localStorage.getItem('tinajas.tuning.v1') || '{}')); } catch { }
 let world = buildWorld(MAPS_3D[0]), run = new LevelRun(world);
-const stage = createStage(renderer), { scene, dust } = stage, camera = new THREE.PerspectiveCamera(24, 1, .3, 400);
+const stage = createStage(renderer), { scene, dust } = stage, marks = new PressMarks(scene), camera = new THREE.PerspectiveCamera(24, 1, .3, 400);
 const roster = new Roster(); let hero = roster.current; setBody(hero.look);
 const upgrades = new Upgrades(), rank = new Rank(), eff = applyStats(upgrades.apply(tuning, makeTuning()), hero.stats), retune = () => { applyStats(upgrades.apply(tuning, eff), hero.stats); run.score.style = eff.style; };
 const athlete = new Athlete(world, eff); let body = createCharacter(hero.look); scene.add(body);
@@ -46,7 +47,7 @@ const allLevels = () => [...MAPS_3D, ...LEVELS_2D, LAB, ...lib.list];
 const exportLevel = l => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(l, null, 1)], { type: 'application/json' })); a.download = l.name.replace(/[^\p{L}\p{N}]+/gu, '-').toLowerCase() + '.json'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); };
 
 // ── Cambiar de nivel y de pantalla ──
-function load(l) { level = l; world = buildWorld(l); run = new LevelRun(world); run.names = TRICKS; run.score.style = eff.style; athlete.world = world; if (room) world.time = (Date.now() / 1000) % 3600; stage.load(world); stage.marks(run); cam.setWorld(world, world.spawns[0].yaw); input.lookOn = !world.plane; doneT = 0; hud.setLevel(l, run); spawn(0); }
+function load(l) { marks.clear(); level = l; world = buildWorld(l); run = new LevelRun(world); run.names = TRICKS; run.score.style = eff.style; athlete.world = world; if (room) world.time = (Date.now() / 1000) % 3600; stage.load(world); stage.marks(run); cam.setWorld(world, world.spawns[0].yaw); input.lookOn = !world.plane; doneT = 0; hud.setLevel(l, run); spawn(0); }
 function play(l, o = {}) { if (o.from) from = o.from; testing = !!o.test; if (editor.on) editor.close(); menu.hide(); load(l); paused = false; hud.openMenu(false); setApp('play'); document.activeElement?.blur?.(); }
 function edit(l) { menu.hide(); leaveRoom(); body.visible = false; setApp('edit'); input.lookOn = false; editor.open(l); }
 function viewerOpen() { menu.hide(); leaveRoom(); load(sanitize({ id: 'visor', name: 'Visor', mode: '3d', theme: 'gym', size: { x0: -12, x1: 12, z0: -12, z1: 12 } })); setApp('viewer'); input.lookOn = true; body.visible = true; viewer.open(); ui.classList.add('on'); }
@@ -62,6 +63,7 @@ const cb = {
   leave: p => { const m = avatars.get(p.id); if (m) { scene.remove(m); avatars.delete(p.id); } hud.feed(p.name, 'salió de la sala'); },
   level: l => { if (app === 'play' && room) { load(l); hud.say('Nivel: ' + l.name); } else pendingLevel?.(l); hud.players(room, netOk); },
   feed: (p, name, lvl) => hud.feed(p.name, name, lvl >= 4 ? '#8fd694' : lvl >= 2 ? '#f2c14e' : '#ef6a5a'),
+  press: (p, d) => { if (app !== 'play') return; marks.add({ ...d, name: p.name, color: COLORS[p.color] || '#ffc531' }); hud.feed(p.name, 'hizo un press 👟', '#ffc531'); },
   finish: (p, t, s) => { hud.feed(p.name, `terminó con ${'★'.repeat(s)}`, '#ffc531'); hud.players(room, netOk); }, race: () => startRace(),
 };
 let pendingLevel = null;
@@ -103,6 +105,7 @@ function debug() {
 function events() {
   for (const e of athlete.drain()) {
     run.event(e, athlete);
+    if (e.type === 'land' && e.press) { const me = menu.prof?.name || hero.name, d = { p: e.press.p.map(v => Math.round(v * 1000) / 1000), prints: e.press.prints.map(q => ({ edge: q.edge.map(v => Math.round(v * 1000) / 1000), toe: q.toe.map(v => Math.round(v * 1000) / 1000) })) }; marks.add({ ...d, name: me, color: room ? COLORS[room.me.color] : '#ffc531' }); if (room) room.send('press', d); }
     if (e.type === 'land') { hud.land(e); if (room && (e.isTrick || e.lvl < 2)) room.send('land', { name: e.isTrick ? `${e.name}: ${e.label.toLowerCase()}` : e.label, lvl: e.lvl }); }
     else if (e.type === 'takeoff') { trail.length = 0; dust(e.p, 6, .8); } else if (e.type === 'touchdown') dust(e.p, Math.min(26, 4 + e.v * 3), .5 + e.v * .22); else if (e.type === 'impact') dust(e.p, 8, 1); else if (e.type === 'step' && e.speed > 4.5) dust(e.p, 2, .4); else if (e.type === 'bounce') trail.length = 0; else if (e.type === 'spring') { trail.length = 0; stage.bump(e.box); dust(e.p, 12, 1.2); } else if (e.type === 'hands') dust(e.p, 7, .6); else if (e.type === 'vault') { trail.length = 0; hud.vaultStart(e.id); }
     else if (e.type === 'out') { control.reset(); sense.clear(); trail.length = 0; cam.init = false; if (run.aim) athlete.side = Math.sin(run.spot.yaw) < 0 ? -1 : 1; }
@@ -140,7 +143,7 @@ function playFrame(real) {
   if (!lock && athlete.state === 'ground' && !athlete.js) slots.list.forEach((t, i) => { if (!t || !input.slotHit(i)) return; if (t === 'jstep') { athlete.charging = false; athlete.charge = 0; athlete.startJstep(); } else if (MOVES[t]?.acro && !raw.jump && !athlete.charging) athlete.startAcro(t); else if (MOVES[t]?.ground && !raw.jump && !athlete.charging) athlete.startSpin(t); else if (!raw.jump && !athlete.charging) hud.needJump(); });  // los trucos son solo en el aire
   curInp = { ...raw, held }; const n = Math.max(1, Math.ceil(dt * 240)); for (let i = 0; i < n; i++) { const c = control.drive(raw, held); athlete.update(dt / n, lab.script ? { ...c, ...lab.script(athlete) } : c); } events(); rules(dt);
   if (doneT > 0) { doneT -= real; if (doneT <= 0) { doneT = -1; hud.finish(run.done, { aim: run.aim, test: testing, par: level.rules.time, task: taskText({ task: run.task }, TRICKS), record: run.record, rank: run.place, next: !testing && !room && nextLevel() }); } }
-  stage.update(dt, athlete.com); const tz = run.aim ? run.target || world.zones.at(-1) : null; if (tz) cam.spotY = run.spot.y; cam.update(dt, athlete, input.look, input.zoom, real, sense.opp?.box || (athlete.state === 'vault' ? athlete.vault.box : null), tz ? { ...tz, ...world.live(tz) } : null);
+  stage.update(dt, athlete.com); marks.update(real); const tz = run.aim ? run.target || world.zones.at(-1) : null; if (tz) cam.spotY = run.spot.y; cam.update(dt, athlete, input.look, input.zoom, real, sense.opp?.box || (athlete.state === 'vault' ? athlete.vault.box : null), tz ? { ...tz, ...world.live(tz) } : null);
 }
 function remotes(now) {
   if (!room) return; const list = [];
@@ -161,5 +164,5 @@ function frame(now) {
   input.flush(); renderer.render(scene, camera); requestAnimationFrame(frame);
 }
 // acceso para depurar desde la consola
-const lab = window.__lab = { athlete, control, slots, abilities, sense, get world() { return world; }, get run() { return run; }, upgrades, rank, eff, viewer, get room() { return room; }, roster, setHero, get body() { return body; }, get app() { return app; }, tuning, cam, hud, menu, editor, stage, scene, spawn, view, play, edit, home, allLevels, host, join, script: null, renderer, camera, body, step: (dt, inp) => { simulate(dt, inp); events(); }, ctl: (dt, inp, held) => { for (let i = 0; i < 4; i++) athlete.update(dt / 4, control.drive(inp, new Set(held))); events(); rules(dt); }, setSlow: v => slow = v, setPaused: v => paused = v, GRADES };
+const lab = window.__lab = { athlete, marks, control, slots, abilities, sense, get world() { return world; }, get run() { return run; }, upgrades, rank, eff, viewer, get room() { return room; }, roster, setHero, get body() { return body; }, get app() { return app; }, tuning, cam, hud, menu, editor, stage, scene, spawn, view, play, edit, home, allLevels, host, join, script: null, renderer, camera, body, step: (dt, inp) => { simulate(dt, inp); events(); }, ctl: (dt, inp, held) => { for (let i = 0; i < 4; i++) athlete.update(dt / 4, control.drive(inp, new Set(held))); events(); rules(dt); }, setSlow: v => slow = v, setPaused: v => paused = v, GRADES };
 home(roster.chosen ? 'home' : 'chars'); requestAnimationFrame(t => { last = t; frame(t); document.getElementById('load').classList.add('off'); });

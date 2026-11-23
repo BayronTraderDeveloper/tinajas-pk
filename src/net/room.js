@@ -32,6 +32,7 @@ export class Room {
     else if (m.k === 'land') { const lvl = fin(m.lvl, 0, 5); if (lvl !== null) this.cb.feed?.(p, String(m.name || '').replace(/[<>]/g, '').slice(0, 60), lvl); }
     else if (m.k === 'pts') { const n = fin(m.n, 0, 9999999); if (n !== null) { p.pts = n; this.cb.change?.(); } }
     else if (m.k === 'fin') { const t = fin(m.time, 0, 3600), s = fin(m.stars, 1, 3); if (t !== null && s !== null) { this.record(p.id, p.name, t, s, fin(m.score, 0, 9999999) || 0); this.cb.finish?.(p, t, s); } }
+    else if (m.k === 'press') { const v = a => Array.isArray(a) && a.length === 3 && a.every(x => Number.isFinite(x) && Math.abs(x) < 2000) ? a : null, P = v(m.p), pr = Array.isArray(m.prints) ? m.prints.slice(0, 2).map(q => q && v(q.edge) && v(q.toe) ? { edge: q.edge, toe: q.toe } : null).filter(Boolean) : []; if (P) this.cb.press?.(p, { p: P, prints: pr }); }
     else if (m.k === 'race') { if (m.f === this.host) this.cb.race?.(p); }
   }
   record(id, name, time, stars, score = 0) { const b = this.board.get(id); if (!b || score > b.score || (score === b.score && time < b.time)) this.board.set(id, { name, time, stars, score }); }

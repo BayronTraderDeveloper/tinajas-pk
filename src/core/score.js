@@ -1,11 +1,11 @@
 // Puntuación: cada truco vale distinto; cuantos más y más variados en el mismo vuelo, más se multiplica. Caerse lo pierde todo.
 import { VAULTS } from './vaults.js';
 export const POINTS = {
-  tuck: 20, pike: 30, jstep: 50, kong: 60, dkong: 90, twL: 80, twR: 80, flipB: 100, flipF: 110, sideL: 120, sideR: 120, aerial: 140, flash: 150, gainer: 160, webster: 170, raiz: 180, barani: 190, castaway: 200, btwist: 210, arabian: 230, cork: 260, giant: 120, dbtwist: 420, dcork: 560, tcork: 900,
+  tuck: 20, pike: 30, jstep: 50, kong: 60, dkong: 90, twL: 80, twR: 80, flipB: 100, flipF: 110, sideL: 120, sideR: 120, aerial: 140, flash: 150, gainer: 160, webster: 170, raiz: 180, barani: 190, castaway: 200, btwist: 210, arabian: 230, cork: 260, giant: 120, barturn: 40, press: 250, dbtwist: 420, dcork: 560, tcork: 900,
 };
 // Clase de dificultad, para la tabla
 export const tier = p => p >= 200 ? 'S' : p >= 150 ? 'A' : p >= 100 ? 'B' : 'C';
-export const NAMES = { flipB: 'Backflip', flipF: 'Frontflip', sideL: 'Sideflip izq.', sideR: 'Sideflip der.', twL: 'Giro 360° izq.', twR: 'Giro 360° der.', tuck: 'Agrupado', pike: 'Carpa', jstep: 'J-step', cork: 'Cork', btwist: 'B-twist', giant: 'Gigante', dbtwist: 'Doble B-twist', dcork: 'Doble cork', tcork: 'Triple cork', raiz: 'Raiz', gainer: 'Gainer', webster: 'Webster', flash: 'Flash kick', aerial: 'Aerial', arabian: 'Arabian', barani: 'Barani', ...Object.fromEntries(Object.entries(VAULTS).map(([k, v]) => [k, v.name])) };
+export const NAMES = { flipB: 'Backflip', flipF: 'Frontflip', sideL: 'Sideflip izq.', sideR: 'Sideflip der.', twL: 'Giro 360° izq.', twR: 'Giro 360° der.', tuck: 'Agrupado', pike: 'Carpa', jstep: 'J-step', cork: 'Cork', btwist: 'B-twist', giant: 'Gigante', barturn: 'Media vuelta', press: 'Press', dbtwist: 'Doble B-twist', dcork: 'Doble cork', tcork: 'Triple cork', raiz: 'Raiz', gainer: 'Gainer', webster: 'Webster', flash: 'Flash kick', aerial: 'Aerial', arabian: 'Arabian', barani: 'Barani', ...Object.fromEntries(Object.entries(VAULTS).map(([k, v]) => [k, v.name])) };
 export const LAND = { perfect: 1.5, stable: 1.2, unbalanced: .8, steps: .5 };
 export class Score {
   constructor() { this.style = 1; this.reset(); }

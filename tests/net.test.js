@@ -20,3 +20,10 @@ test('red: mensajes falsos o abusivos se ignoran; solo el anfitrión cambia el n
   B.setLevel(sanitize({ name: 'robo' })); assert.notEqual(A.level.name, 'robo'); A.send('race', {}); B.send('race', {}); assert.equal(races, 1); A.setLevel(sanitize({ name: 'nuevo' })); assert.equal(B.level.name, 'nuevo'); assert.equal(lv, n0 + 1);
   A.leave(); assert.ok(B.isHost, 'si el anfitrión se va, pasa al siguiente'); B.leave(); assert.equal(cleanName('  <i>x '), 'ix'); assert.equal(cleanName(''), 'Atleta'); assert.equal(cleanCode(' ab-c 1'), 'ABC1');
 });
+test('red: el press llega a los demás con sus huellas; los falsos se ignoran', async () => {
+  const open = bus(), got = []; const A = await new Room('Z', { name: 'Ana' }, {}, open).join(sanitize({})); await new Promise(r => setTimeout(r, 5)); const B = await new Room('Z', { name: 'Beto' }, { press: (p, d) => got.push([p.name, d]) }, open).join(null);
+  A.send('press', { p: [2, .4, 0], prints: [{ edge: [2, .4, .1], toe: [2.15, .4, .1] }, { edge: [2, .4, -.1], toe: 'x' }, 5] });
+  for (const p of [null, 'x', [1, 2], [1, 2, Infinity], [1e9, 0, 0]]) A.send('press', { p });
+  assert.equal(got.length, 1); assert.equal(got[0][0], 'Ana'); assert.deepEqual(got[0][1].prints, [{ edge: [2, .4, .1], toe: [2.15, .4, .1] }]);
+  B.leave(); A.leave();
+});

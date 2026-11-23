@@ -4,6 +4,7 @@
 // Doble kong: primer apoyo cerca del inicio, vuelo horizontal, segundo apoyo cerca del final y ahí se recogen las rodillas.
 import { clamp, lerp, smooth, V, qYaw, qEuler, DEG, damp } from './mathx.js';
 import { POSES, mix, offset } from './poses.js';
+import { BODY, COM_H } from './body.js';
 
 export const VAULTS = {
   kong: { name: 'Kong', key: 'Digit1', label: '1', minLen: .35, maxLen: 1.4, minV: 3.5 },
@@ -34,7 +35,7 @@ export function faces(w, b, p) {
 const clear = (w, a, D, face, step) => { for (let s = step; s < face - .12; s += .2) { const g = w.ground(a.pos.x + D.x * s, w.plane ? 0 : a.pos.z + D.z * s, a.pos.y + 3); if (!g || Math.abs(g.y - a.pos.y) > .2) return false; } return true; };
 const beyond = (w, a, f, d) => w.ground(a.pos.x + f.dir.x * (f.face + f.len + d), w.plane ? 0 : a.pos.z + f.dir.z * (f.face + f.len + d), f.box.top + 3);
 // Subida hasta apoyar las manos en un muro: tiempo de vuelo según la altura
-const wallRise = (h, g) => { const dy = Math.max(.12, h + .44 - 1.06), vy = Math.sqrt(.16 + 2 * g * dy); return { vy, T: (vy - .4) / g }; };
+const wallRise = (h, g) => { const dy = Math.max(.12, h + .44 * BODY.k - 1.06 * BODY.k), vy = Math.sqrt(.16 + 2 * g * dy); return { vy, T: (vy - .4) / g }; };
 export const takeoffDist = (v, id = 'kong', h = 1, g = 9.81) => VAULTS[id]?.wall ? .36 + .11 * Math.min(v, 4.2) + 2.5 * wallRise(h, g).T : .7 + .24 * v;
 
 // ── Oportunidad: detecta la plataforma y da 2 s para decidir, con cámara lenta sutil ──
@@ -136,12 +137,12 @@ export class VaultMotion {
       if (wall) { add('hands', sc + .10, yc + .13, .25, 104, 0, .28, 0); add('hands', sc - .16, yc + .42, 4.05, 50, 0, .24, -1.6); }
       else { add('hands', sc + .36, top + .58, 1.95, 60, 0, .27, 2.8); this.v = 2.8; }
     } else if (wall) {
-      const r = wallRise(top - a.pos.y, g), va = Math.min(v, 4.2), yA = a.pos.y + 1.06, sA = (v + va) / 2 * .11, sc = S(hands[0]) - .46, yc = yA + r.vy * r.T - .5 * g * r.T * r.T;
+      const r = wallRise(top - a.pos.y, g), va = Math.min(v, 4.2), yA = a.pos.y + 1.06 * BODY.k, sA = (v + va) / 2 * .11, sc = S(hands[0]) - .46, yc = yA + r.vy * r.T - .5 * g * r.T * r.T;
       add('push', sA, yA, r.vy, 10, undefined, .11, va); add('fly', sc, yc, .4, 66, undefined, r.T, 1.1);
       add('hands', sc + .10, yc + .13, .25, 104, 0, .24, 0);                    // media parada: las piernas suben
       add('hands', sc - .16, yc + .42, 4.05, 50, 0, .24, -1.6);                 // empuje: las piernas bajan con latigazo y sale hacia atrás
     } else {
-    const sA = v * .11, yA = a.pos.y + 1.06, s1 = S(hands[0]) - .55, T1 = Math.max(.12, (s1 - sA) / v), vyA = (yTop - yA) / T1 + g * T1 / 2;
+    const sA = v * .11, yA = a.pos.y + 1.06 * BODY.k, s1 = S(hands[0]) - .55, T1 = Math.max(.12, (s1 - sA) / v), vyA = (yTop - yA) / T1 + g * T1 / 2;
     add('push', sA, yA, vyA, 24); add('fly', s1, yTop, vyA - g * T1, 80);
     if (id === 'kong') add('hands', s1 + .36, top + .57, 1.75, 60, 0);
     else {
@@ -188,7 +189,7 @@ export class VaultMotion {
     const a = this.a, s = this.segs.at(-1); a.vel.copy(this.D).multiplyScalar(this.v * .985 * a.T.kong); a.velH.copy(a.vel); a.vel.y = s.vy1; a.tilt.set(0, 0, 0);
     a.launchSpeed = 99; a.beginAir('vault'); a.vaultName = VAULTS[this.id].name; a.tuckAmt = 1;
     // las rodillas siguen recogidas hasta librar el canto; el empuje de manos da el giro que endereza al atleta
-    const bp = this.at(this.far + .9, 0), lg = a.world.ground(bp.x, bp.z, this.box.top), h = a.com.y - .92 - (lg ? lg.y : 0), g = a.T.gravity, ttg = (s.vy1 + Math.sqrt(s.vy1 ** 2 + 2 * g * Math.max(.05, h))) / g;
+    const bp = this.at(this.far + .9, 0), lg = a.world.ground(bp.x, bp.z, this.box.top), h = a.com.y - COM_H - (lg ? lg.y : 0), g = a.T.gravity, ttg = (s.vy1 + Math.sqrt(s.vy1 ** 2 + 2 * g * Math.max(.05, h))) / g;
     a.vaultBox = this.box; a.vaultFar = this.at(this.far + .22, 0); a.vaultDir = this.D; a.vaultHold = clamp((this.farS - s.s1 + .16) / this.v, .08, ttg * .5);
     let k = 0; const n = 40; for (let i = 0; i < n; i++) { const t = (i + .5) / n * ttg, q = t - a.vaultHold; k += ttg / n / (q < 0 ? 4.6 : 11.6 + (4.6 - 11.6) * Math.exp(-Math.max(0, q - .03) / .085)); }
     const rot = (s.th1 - 4) * DEG; a.L.copy(a.tkRight).multiplyScalar(-rot / k); a.hTwist = 0;

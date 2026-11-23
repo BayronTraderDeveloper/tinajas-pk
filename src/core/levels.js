@@ -1,6 +1,6 @@
 // Niveles como datos: un catálogo de piezas, validación y construcción del mundo físico. Sirve para 2D y 3D.
 import { World } from './world.js';
-import { clamp, DEG } from './mathx.js';
+import { clamp, DEG, V } from './mathx.js';
 
 // Piezas: medidas por defecto [ancho x, alto y, fondo z] y límites
 export const KINDS = {
@@ -17,6 +17,7 @@ export const KINDS = {
   fan: { name: 'Viento', group: 'Mecánicas', size: [2, 5, 2.4] },
   ring: { name: 'Aro', group: 'Mecánicas', size: [1.9, 1.9, .3], y: 2 },
   swing: { name: 'Péndulo', group: 'Mecánicas', size: [.8, 3, .8], y: 4 },
+  bar: { name: 'Barra', group: 'Mecánicas', size: [.2, 2.45, 2.4] },
   star: { name: 'Estrella', group: 'Reglas', size: [.6, .6, .6], y: 1.2 },
   check: { name: 'Punto de control', group: 'Reglas', size: [1, 2, 1], only: '3d' },
   zone: { name: 'Objetivo', group: 'Reglas', size: [1.4, .05, 2.2] },
@@ -74,7 +75,7 @@ export function buildWorld(level) {
   for (const x of [x0 - .2, x1 + .2]) w.box([x, 4, cz], [.4, 80, z1 - z0], 'wall', { id: 'wall' });
   if (is3) for (const z of [z0 - .2, z1 + .2]) w.box([cx, 4, z], [x1 - x0, 40, .4], 'wall', { id: 'wall' });
   for (const it of level.items) addItem(w, it);
-  w.rings = of('ring'); w.fans = of('fan'); w.movers = w.boxes.filter(b => b.item && (b.item.t === 'swing' || (b.item.ma && b.item.md))); for (const b of w.movers) { b.c0 = b.c.clone(); b.v = b.c.clone().set(0, 0, 0); }
+  w.rings = of('ring'); w.fans = of('fan'); w.bars = of('bar').map(it => { const a = it.r * DEG, ax = is3 ? V(Math.sin(a), 0, Math.cos(a)) : V(0, 0, 1); return { item: it, p: V(it.x, it.y + it.h, is3 ? it.z : 0), axis: ax, half: it.d / 2 }; }); w.movers = w.boxes.filter(b => b.item && (b.item.t === 'swing' || (b.item.ma && b.item.md))); for (const b of w.movers) { b.c0 = b.c.clone(); b.v = b.c.clone().set(0, 0, 0); }
   const fr = w.boxes.filter(b => b.item?.fr); if (fr.length) { w.fragile = fr; w.restore(); } w.step(1e-6); for (const b of w.movers) b.v.set(0, 0, 0); w.time = 0;
   // pilar bajo las piezas que quedan sobre un hueco
   if (!is3) for (const it of level.items) if (KINDS[it.t].solid && it.y === 0 && !it.ma && !it.fr && it.t !== 'tramp' && !w.spans.some(([a, b]) => it.x - it.w / 2 >= a - .01 && it.x + it.w / 2 <= b + .01)) w.box([it.x, -3.005, 0], [it.w * .94, 6, it.d * .94], 'wall', { id: 'pillar', noCam: true });

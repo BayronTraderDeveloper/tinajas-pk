@@ -2,7 +2,7 @@
 // En el aire solo existe conservación del momento angular: la postura cambia la inercia y la inercia cambia el giro.
 import { Quaternion } from 'three';
 import { V, UP, DEG, clamp, lerp, smooth, remap, damp, wrapPi, qEuler, qYaw, qExp, qLog, qBasisYZ, qBasisYX } from './mathx.js';
-import { Skeleton, BONES, IDX, CONTACTS, HIP_H, THIGH, SHIN, ANKLE_H, TOTAL_MASS } from './body.js';
+import { Skeleton, BONES, IDX, CONTACTS, HIP_H, THIGH, SHIN, ANKLE_H, TOTAL_MASS, ARM_A, ARM_B, COM_H, BODY } from './body.js';
 import { POSES, MOVE_POSES, mix, offset } from './poses.js';
 import { MOVES } from './control.js';
 import { ACRO, FAMILY, acroParams, axisOf, variantName } from './acro.js';
@@ -42,7 +42,7 @@ export class Athlete {
   drain() { const e = this.events; this.events = []; return e; }
 
   reset(s) {
-    this.spinOnly = null; this.armed = null; this.armedSide = false; this.autoJ = 0; this.autoArm = null; this.acroVar = null; this.state = 'ground'; this.t = 0; this.side = undefined; this.js = null; this.freeLeg = null; this.setup = null; this.moveLog = {}; this.moveId = null; this.pos = V(s.x, s.y, s.z); this.bodyY = s.y; this.yaw = s.yaw; this.velH = V(); this.vel.set(0, 0, 0);
+    this.bar = null; this.barCool = 0; this.spinOnly = null; this.armed = null; this.armedSide = false; this.autoJ = 0; this.autoArm = null; this.acroVar = null; this.state = 'ground'; this.t = 0; this.side = undefined; this.js = null; this.freeLeg = null; this.setup = null; this.moveLog = {}; this.moveId = null; this.pos = V(s.x, s.y, s.z); this.bodyY = s.y; this.yaw = s.yaw; this.velH = V(); this.vel.set(0, 0, 0);
     this.charge = 0; this.charging = false; this.jumpHeld = false; this.comp = 0; this.compV = 0;
     this.sway = V(); this.swayV = V(); this.tilt = V(); this.tiltV = V(); this.phase = 0; this.lock = 0; this.balance = 0; this.run = 0;
     this.L.set(0, 0, 0); this.hTwist = 0; this.omega.set(0, 0, 0); this.wTwist = 0; this.contactT = null; this.bounceT = 0; this.ikW = 1; this.gaitW = 0;
@@ -51,13 +51,59 @@ export class Athlete {
     for (const k of LEGS) { const f = this.foot[k]; this.stance(k, f.p, f.q); f.step = -1; }
     this.poseGround(1 / 240, NO_INPUT, true);
   }
+  // ───────────────────────── BARRA ─────────────────────────
+  // Se agarra si las manos llegan a la barra en el aire. Péndulo alrededor de la barra: las flechas dan impulso (con
+  // suficiente, vuelta completa: gigante); Espacio suelta con la velocidad y el giro que lleve, para hacer trucos.
+  grabBar() {
+    const bars = this.world.bars; if (!bars?.length || this.barCool > 0 || this.airT < .12) return;
+    const hands = ['handL', 'handR'].map(n => V(0, -.07, 0).applyQuaternion(this.sk.q[IDX[n]]).add(this.sk.pos[IDX[n]]).applyQuaternion(this.rootQ).add(this.rootP)), up = V(0, 1, 0).applyQuaternion(this.rootQ);
+    for (const b of bars) { const m = hands[0].clone().add(hands[1]).multiplyScalar(.5), rel = m.clone().sub(b.p), along = rel.dot(b.axis); if (Math.abs(along) > b.half) continue; const perp = rel.addScaledVector(b.axis, -along); if (perp.length() < .2 && this.com.y < b.p.y && up.y > .2) return this.startBar(b, along); }
+  }
+  startBar(b, along = 0) {
+    const ax = b.axis.clone(), f = V().crossVectors(ax, UP).normalize(), p = b.p.clone().addScaledVector(ax, this.world.plane ? 0 : along), r = this.com.clone().sub(p); r.addScaledVector(ax, -r.dot(ax));
+    // ángulo del cuerpo respecto a colgar recto (0 = debajo de la barra) y velocidad angular a partir de la velocidad que traía
+    const th = Math.atan2(r.dot(f), -r.y), R = Math.max(.6, r.length()), tang = V().copy(f).multiplyScalar(Math.cos(th)).addScaledVector(UP, Math.sin(th));
+    this.yawFromRoot(); const fw = this.forward(); this.bar = { b, p, ax, f, th, w: this.vel.dot(tang) / R, R, face: fw.dot(f) >= 0 ? 1 : -1, turns: 0, t: 0, giants: 0 };
+    this.state = 'bar'; this.L.set(0, 0, 0); this.hTwist = 0; this.wTwist = 0; this.emit('grab', { p: p.clone() }); this.barPose(1 / 240);
+  }
+  barPose(dt) {
+    const B = this.bar, s = Math.sign(B.w * Math.cos(B.th)) || 0, k = clamp(Math.abs(B.w) / 4, 0, 1);
+    // arco al bajar y cuerpo hueco al subir, como en la barra de verdad; piernas juntas y estiradas
+    let pose = { spine: [-6 * s * k * B.face, 0, 0], chest: [-4 * s * k * B.face, 0, 0], neck: [0, 0, 0], head: [6, 0, 0], uparmL: [-176, 0, 8], uparmR: [-176, 0, -8], forearmL: [-4, 0, 0], forearmR: [-4, 0, 0], handL: [0, 0, 0], handR: [0, 0, 0], thighL: [6 * s * k * B.face - 4, 0, 1], thighR: [6 * s * k * B.face - 4, 0, -1], shinL: [4, 0, 0], shinR: [4, 0, 0], footL: [46, 0, 0], footR: [46, 0, 0] };
+    if (B.hold) pose = mix(pose, { ...pose, thighL: [-90, 0, 4], thighR: [-90, 0, -4], spine: [20, 0, 0], chest: [12, 0, 0] }, .8);   // recogido para girar alrededor
+    this.sk.setTarget(pose); this.sk.drive(dt, 16); this.sk.fk();
+    // orientación: el cuerpo va a lo largo del radio, mirando hacia donde miraba al agarrarse
+    const yawQ = qYaw(Math.atan2(B.f.x * B.face, B.f.z * B.face)), rq = new Quaternion().setFromAxisAngle(B.ax, -B.th);
+    this.rootQ.copy(rq).multiply(yawQ);
+    // manos fijas en la barra
+    const hm = V(); for (const n of ['handL', 'handR']) hm.add(V(0, -.07, 0).applyQuaternion(this.sk.q[IDX[n]]).add(this.sk.pos[IDX[n]])); hm.multiplyScalar(.5).applyQuaternion(this.rootQ);
+    this.rootP.copy(B.p).sub(hm); this.com.copy(this.sk.com).applyQuaternion(this.rootQ).add(this.rootP);
+  }
+  barStep(dt, inp) {
+    const B = this.bar, g = this.T.gravity; B.t += dt; B.hold = !!inp.tuck;
+    // dirección pulsada a lo largo del balanceo: empuja en el sentido en que ya se mueve (como el impulso de piernas)
+    const d = this.world.plane ? inp.mx * B.f.x : inp.mx * B.f.x + inp.mz * B.f.z, R = B.hold ? B.R * .78 : B.R, pump = d ? 3.6 * (Math.abs(B.w) > .25 ? Math.sign(B.w) : Math.sign(d)) * (Math.cos(B.th) > -.2 ? 1 : .35) : 0;   // mantener la flecha bombea a favor del balanceo (como el golpe de piernas)
+    B.w += (-(g / R) * Math.sin(B.th) + pump * (this.T.spring || 1) - .12 * B.w) * dt; B.w = clamp(B.w, -9, 9); const th0 = B.th; B.th += B.w * dt;
+    const turns = Math.floor((B.th + Math.PI) / (2 * Math.PI)) - Math.floor((th0 + Math.PI) / (2 * Math.PI)); if (turns) { B.giants++; this.emit('trick', { id: 'giant', n: B.giants }); }
+    this.barPose(dt);
+    if (this.pressed) this.releaseBar();
+  }
+  releaseBar() {
+    const B = this.bar, tang = V().copy(B.f).multiplyScalar(Math.cos(B.th)).addScaledVector(UP, Math.sin(B.th)), r = this.com.clone().sub(B.p);
+    this.vel.copy(tang).multiplyScalar(B.w * r.length()); this.vel.addScaledVector(r.normalize(), -.6); this.vel.y += .9;   // tirón de brazos al soltar
+    this.velH.set(this.vel.x, 0, this.vel.z); this.barCool = .45; this.state = 'air'; this.trick.reset(); this.beginAir('jump'); this.launchSpeed = 1; this.setup = B.giants ? (B.giants > 1 ? B.giants + ' gigantes' : 'Gigante') : 'Barra';
+    this.yawFromRoot(); this.tkRight = this.left(); this.tkFwd = this.forward(); if (this.world.plane) { const s = Math.sin(this.yaw) >= 0 ? 1 : -1; this.side = s; this.tkRight.set(0, 0, -s); this.tkFwd.set(s, 0, 0); }
+    // el cuerpo sigue girando como iba en la barra
+    const I = this.sk.inertia(), a = B.ax.clone(), al = a.clone().applyQuaternion(this.rootQ.clone().invert()); this.L.copy(a).multiplyScalar(-B.w * al.dot(al.clone().applyMatrix3(I)));
+    this.trick.startY = this.pos.y; this.emit('release', { w: B.w }); this.bar = null;
+  }
   // Cayó fuera del nivel: vuelve al último punto de control
   out() { this.emit('out'); this.reset(this.world.respawn || this.world.spawns?.[0] || { x: 0, y: 0, z: 0, yaw: 0 }); }
   get speed() { return this.state === 'ground' || this.state === 'takeoff' ? this.velH.length() : Math.hypot(this.vel.x, this.vel.z); }
   get airborne() { return this.state === 'air'; }
   forward(out = V()) { return out.set(Math.sin(this.yaw), 0, Math.cos(this.yaw)); }
   left(out = V()) { return out.set(Math.cos(this.yaw), 0, -Math.sin(this.yaw)); }
-  stance(k, p, q) { const s = k === 'L' ? 1 : -1; p.copy(this.left()).multiplyScalar(.105 * s).add(this.pos); p.y = this.pos.y + ANKLE_H; qYaw(this.yaw + s * .12, q); }
+  stance(k, p, q) { const s = k === 'L' ? 1 : -1; p.copy(this.left()).multiplyScalar(.105 * BODY.w * s).add(this.pos); p.y = this.pos.y + ANKLE_H; qYaw(this.yaw + s * .12, q); }
 
   update(dt, inp) {
     if (this.autoJ > 0) { this.autoJ -= dt; inp = { ...inp, jump: this.autoJ > 0, mx: 0, mz: 0 }; }   // salto propio de la acrobacia
@@ -69,11 +115,15 @@ export class Athlete {
     else if (this.state === 'air') this.air(dt, inp);
     else if (this.state === 'ragdoll') this.ragdoll(dt, inp);
     else if (this.state === 'getup') this.getup(dt, inp);
+    else if (this.state === 'bar') this.barStep(dt, inp);
+    if (this.barCool > 0) this.barCool -= dt;
   }
 
   // J-step: carrera corta en curva, bloqueo con un pie y patada de la pierna de balanceo. Sirve de salto con más giro.
   startJstep() { if (this.state !== 'ground' || this.js || this.charging || this.lock > .1) return false; const plane = this.world.plane, d = plane ? (Math.sin(this.yaw) >= 0 ? 1 : -1) : 1, yaw = plane ? d * Math.PI / 2 : this.yaw; this.js = { t: 0, T: .5, d, z0: this.pos.z, yaw, f: V(Math.sin(yaw), 0, Math.cos(yaw)), r: V(-Math.cos(yaw), 0, Math.sin(yaw)) }; this.emit('jstep'); return true; }
   // Fase A: mantener la tecla de una acrobacia mientras se carga el salto prepara su entrada (y el B-twist se pone de lado)
+  // Cambia de cuerpo (otro personaje): rehace la postura de referencia y vuelve a empezar
+  rebody(s) { this.braceSk.setTarget(POSES.brace); this.braceSk.snap(); this.reset(s || { x: this.pos.x, y: this.pos.y, z: this.pos.z, yaw: this.yaw }); }
   arm(id, v = id) { if (!FAMILY[id] || this.state !== 'ground' || !this.charging) return false; if (this.armed !== id) { this.armed = id; this.armVar = v; this.armDir = Math.sin(this.yaw) >= 0 ? 1 : -1; this.armYaw0 = this.world.plane ? this.armDir * Math.PI / 2 : this.yaw; this.armedSide = !!ACRO[id].entry.face; this.emit('arm', { id }); } return true; }
   // Cork o B-twist pulsado en el suelo, sin Espacio: prepara su entrada y salta solo para hacer el movimiento real
   startAcro(id, v = id) { if (!FAMILY[id] || this.state !== 'ground' || this.js || this.charging || this.lock > .1) return false; this.autoJ = .36; this.autoArm = [id, v]; return true; }
@@ -83,7 +133,7 @@ export class Athlete {
   // Brazo de dos huesos: muñeca a un punto del mundo, codo hacia atrás y afuera, palma abajo
   armIK(k, target, w) {
     const sk = this.sk, sg = k === 'L' ? 1 : -1, ci = IDX.chest, ui = IDX['uparm' + k], cq = this.rootQ.clone().multiply(sk.q[ci]), inv = cq.clone().invert();
-    const sh = V().copy(sk.pos[ui]).applyQuaternion(this.rootQ).add(this.rootP), t = V().subVectors(target, sh).applyQuaternion(inv), A = .285, B = .26, d = clamp(t.length(), .18, A + B - .002), dir = t.normalize();
+    const sh = V().copy(sk.pos[ui]).applyQuaternion(this.rootQ).add(this.rootP), t = V().subVectors(target, sh).applyQuaternion(inv), A = ARM_A, B = ARM_B, d = clamp(t.length(), .18, A + B - .002), dir = t.normalize();
     const al = Math.acos(clamp((A * A + d * d - B * B) / (2 * A * d), -1, 1)), fl = Math.PI - Math.acos(clamp((A * A + B * B - d * d) / (2 * A * B), -1, 1));
     const hint = V(0, -.75, .5).add(V(-sg * .45, 0, 0)), up = qBasisYZ(dir.clone().multiplyScalar(-1), hint).multiply(qEuler(al / DEG, 0, 0)), fo = qEuler(-fl / DEG, 0, 0);
     const fwd = this.forward(), hw = qBasisYX(fwd.clone().multiplyScalar(-1), V(0, sg, 0)), hl = cq.clone().multiply(up).multiply(fo).invert().multiply(hw);
@@ -121,7 +171,7 @@ export class Athlete {
     // mover y colisionar
     const sb = this.surf?.box; if (sb && (sb.off || sb.launch)) { if (sb.launch) return this.springGround(sb); this.surf = null; } else if (sb) { if (sb.item?.fr) sb.touched = true; if (sb.v) this.ride(sb, dt); }
     this.pos.addScaledVector(this.velH, dt);
-    for (const h of [.45, .95, 1.4]) { const c = this.world.sphere(V(this.pos.x, this.pos.y + h, this.pos.z), .26, this.pos.y + STEP); if (c && Math.abs(c.n.y) < .5) { this.pos.x += c.n.x * c.depth; this.pos.z += c.n.z * c.depth; const vn = this.velH.dot(c.n); if (vn < 0) this.velH.addScaledVector(c.n, -vn); } }
+    for (const h of [.45, .95, 1.4]) { const c = this.world.sphere(V(this.pos.x, this.pos.y + h * BODY.k, this.pos.z), .26 * BODY.w, this.pos.y + STEP); if (c && Math.abs(c.n.y) < .5) { this.pos.x += c.n.x * c.depth; this.pos.z += c.n.z * c.depth; const vn = this.velH.dot(c.n); if (vn < 0) this.velH.addScaledVector(c.n, -vn); } }
     const g = this.world.ground(this.pos.x, this.pos.z, this.pos.y + STEP, .06), spd = this.velH.length();
     if (!g || g.y < this.pos.y - (spd < 4 ? STEP : .34)) return this.leaveEdge(inp);
     this.pos.y = g.y;
@@ -165,7 +215,7 @@ export class Athlete {
   }
   gait(sp) {
     const cad = sp < 3 ? lerp(1.75, 2.75, clamp(sp / 3, 0, 1)) : remap(sp, 3, 6.8, 2.75, 3.95), T = 2 / cad;
-    return { T, duty: sp < 2 ? remap(sp, .5, 2, .62, .47) : remap(sp, 2, 6.8, .47, .28), lift: sp < 1.6 ? remap(sp, .4, 1.6, .07, .15) : remap(sp, 1.6, 6.5, .15, .52), run: remap(sp, 1.3, 6, 0, 1) };
+    return { T, duty: sp < 2 ? remap(sp, .5, 2, .62, .47) : remap(sp, 2, 6.8, .47, .28), lift: sp < 1.6 ? remap(sp, .4, 1.6, .07, .15) : remap(sp, 1.6, 6.5, .15, .6), run: remap(sp, 1.3, 6, 0, 1) };
   }
   poseGround(dt, inp, snap = false) {
     const sp = this.velH.length(), gt = this.gait(sp), moving = sp > .25 && this.state === 'ground';
@@ -176,7 +226,7 @@ export class Athlete {
     // pelvis: baja al apoyar, sube en el vuelo; avanza la cadera de la pierna que va delante y cae del lado sin apoyo
     const bob = G * (remap(ss, 0, 1.8, 0, .02) + remap(ss, 1.8, 4, 0, .026)) * cs(2 * (ph - mid));
     const drop = .022 + G * (remap(ss, 0, 3, 0, .058) + R * .022);
-    const hipYaw = -G * lerp(5, 11, R) * cs(ph - .12), hipRoll = G * lerp(3, 4.5, R) * cs(ph - mid), hipPitch = G * (R * 3 + lerp(1, 2.4, R) * sn(2 * (ph - mid)));
+    const hipYaw = -G * lerp(5, 11, R) * cs(ph - .12), hipRoll = G * lerp(3, 4.5, R) * cs(ph - mid), hipPitch = G * (R * 6.5 + lerp(1, 2.4, R) * sn(2 * (ph - mid)));   // al correr, el cuerpo se inclina hacia delante
     // respiración y peso en reposo
     const idle = 1 - G, br = sn(this.t * 1.65) * (1 + R * .5), shift = idle * sn(this.t * .55) * (this.comp > -.06 ? 1 : 0);
     const tq = qExp(this.tilt), yq = qYaw(this.yaw);
@@ -185,13 +235,13 @@ export class Athlete {
     this.rootP.copy(this.pos).add(this.sway).addScaledVector(this.left(), G * .014 * cs(ph - mid) + shift * .012); this.rootP.y = this.bodyY + pelvisY;
     // torso: el pecho contrarrota con un leve retraso y la cabeza se mantiene estable
     const chYaw = -hipYaw * 1.05 + G * lerp(5, 9, R) * cs(ph - .45), spRoll = -hipRoll * .55, chRoll = -hipRoll * .55;
-    let pose = offset(POSES.stand, 'spine', [G * (2 + R * 5) + br * .25, chYaw * .45 - hipYaw * .1, spRoll - shift]);
+    let pose = offset(POSES.stand, 'spine', [G * (2 + R * 7) + br * .25, chYaw * .45 - hipYaw * .1, spRoll - shift]);
     pose = offset(pose, 'chest', [br * .9 - G * hipPitch * .4, chYaw * .55, chRoll]); pose = offset(pose, 'neck', [-G * R * 4, -chYaw * .25, -chRoll * .4]); pose = offset(pose, 'head', [-G * (R * 5 + bob * 60) + idle * sn(this.t * .8) * 1.2, -(chYaw + hipYaw) * .6, shift * .6]);
     // brazos: péndulo desde el hombro, contrario a la pierna. El codo va doblado y solo respira un poco;
     // el empuje es hacia atrás, la mano pasa junto a la cadera y sube hacia el centro del pecho.
     for (const [k, sg, o] of [['L', 1, 0], ['R', -1, Math.PI]]) {
       const q = ph + o - lerp(.42, .25, R), w = cs(q), fwd = smooth(clamp(-w, 0, 1)), bk = smooth(clamp(w, 0, 1)), e = q - .35, life = 1 + .05 * sn(this.t * .83 + o * 1.7);
-      const swing = (w > 0 ? lerp(27, 56, R) : lerp(23, 44, R)) * w * life + lerp(9, 6, R);
+      const swing = (w > 0 ? lerp(27, 74, R) : lerp(23, 56, R)) * w * life + lerp(9, 4, R);   // esprint: la mano sube a la barbilla y baja por detrás de la cadera
       pose = offset(pose, 'uparm' + k, [G * swing, sg * G * (-lerp(9, 7, R) - fwd * lerp(15, 20, R) + bk * 5), sg * G * (lerp(4, 5, R) + bk * lerp(5, 8, R) + .8 * br)]);
       pose = offset(pose, 'forearm' + k, [-G * (lerp(72, 76, R) + lerp(4, 11, R) * cs(2 * e) + fwd * lerp(9, 14, R) + 2 * sn(e)), 0, 0]);
       pose = offset(pose, 'hand' + k, [G * (-6 + 7 * sn(q - 1)), 0, sg * -5 * G]);
@@ -222,7 +272,7 @@ export class Athlete {
         if (!f.planted) { f.planted = true; this.emit('step', { speed: sp, p: tgt.clone(), surf: this.surf?.surf }); }
       } else { // vuelo del pie: talón al glúteo, rodilla al frente, extensión y retroceso antes de apoyar
         f.planted = false; const u = (ph - gt.duty) / (1 - gt.duty), r0 = lerp(.075, .115, this.run), p0 = lerp(38, 58, this.run);
-        const Z = [-1, lerp(-1.02, -1.12, this.run), lerp(-.42, -.5, this.run), .42, lerp(1.0, 1.1, this.run), 1], Y = [r0, gt.lift * .74, gt.lift, gt.lift * .62, gt.lift * .27, 0], Pt = [p0, p0 * 1.35, p0 * 1.0, 14, -12, lerp(-13, -3, this.run)];
+        const Z = [-1, lerp(-1.02, -1.08, this.run), lerp(-.42, -.3, this.run), lerp(.42, .6, this.run), lerp(1.0, 1.12, this.run), 1], Y = [r0, gt.lift * lerp(.74, .98, this.run), gt.lift * lerp(1, 1.04, this.run), gt.lift * lerp(.62, .82, this.run), gt.lift * lerp(.27, .32, this.run), 0], Pt = [p0, p0 * 1.35, p0 * 1.0, 14, -12, lerp(-13, -3, this.run)];
         tgt = V().copy(this.pos).add(lat).addScaledVector(vdir, catmull(Z, u) * reach); y = Math.max(0, catmull(Y, u)); pitch = catmull(Pt, u);
       }
       let gy = ground(tgt); if (!f.planted) gy = Math.max(gy, ground(V().copy(tgt).addScaledVector(vdir, .22)), ground(V().copy(tgt).addScaledVector(vdir, -.12)));  // el pie libra el canto
@@ -283,11 +333,11 @@ export class Athlete {
   // El suelo permite generar momento angular: cuanto mejor sincronizada la tecla, más giro.
   groundTorque(dt, inp, dur, gain) {
     const T = this.T, k = gain * dt / dur;
-    this.L.addScaledVector(this.tkRight, inp.flip * T.takeoffFlip * k);
-    this.L.addScaledVector(this.tkFwd, inp.side * T.takeoffFlip * .92 * k);
-    this.hTwist += inp.twist * T.takeoffTwist * k;
-    if (this.L.length() > T.maxFlipL) this.L.setLength(T.maxFlipL);
-    this.hTwist = clamp(this.hTwist, -T.maxTwistL, T.maxTwistL);
+    this.L.addScaledVector(this.tkRight, inp.flip * T.takeoffFlip * k * BODY.I);
+    this.L.addScaledVector(this.tkFwd, inp.side * T.takeoffFlip * .92 * k * BODY.I);
+    this.hTwist += inp.twist * T.takeoffTwist * k * BODY.Iw;
+    if (this.L.length() > T.maxFlipL * BODY.I) this.L.setLength(T.maxFlipL * BODY.I);
+    this.hTwist = clamp(this.hTwist, -T.maxTwistL * BODY.Iw, T.maxTwistL * BODY.Iw);
   }
   takeoff(dt, inp) {
     this.toT += dt; const u = clamp(this.toT / this.toDur, 0, 1);
@@ -324,14 +374,14 @@ export class Athlete {
   air(dt, inp) {
     const T = this.T, g = T.gravity; this.airT += dt;
     // 1) control corporal: pares limitados, nunca detienen el giro al instante
-    const boost = inp.boost || 1, brakeK = inp.brake || 1, maxL = boost > 2 ? 125 : T.maxFlipL;  // truco mantenido
+    const boost = inp.boost || 1, brakeK = inp.brake || 1, BI = BODY.I, BW = BODY.Iw, maxL = (boost > 2 ? 125 : T.maxFlipL) * BI;  // truco mantenido; un cuerpo mayor necesita más impulso para el mismo giro
     const ax = (axis, cmd, max) => {
       if (!cmd) return; const cur = this.L.dot(axis), brake = cur * cmd < 0;
-      const tq = brake ? T.airBrakeTorque * brakeK : T.airFlipTorque * clamp(1 - Math.abs(cur) / max, 0, 1) * 1.4 * boost; this.L.addScaledVector(axis, cmd * tq * dt);
+      const tq = (brake ? T.airBrakeTorque * brakeK : T.airFlipTorque * clamp(1 - Math.abs(cur) / max, 0, 1) * 1.4 * boost) * BI; this.L.addScaledVector(axis, cmd * tq * dt);
     };
     if (this.bounceT <= 0) {
       ax(this.tkRight, inp.flip, maxL); ax(this.tkFwd, inp.side, maxL); if (inp.spins) for (const q of inp.spins) ax(q.axis, q.c, maxL);
-      if (inp.twist) { const brake = this.hTwist * inp.twist < 0; this.hTwist += inp.twist * (brake ? T.airTwistTorque * 1.8 * (inp.twMax || 1) : T.airTwistTorque * clamp(1 - Math.abs(this.hTwist) / (T.maxTwistL * (inp.twMax || 1)), 0, 1) * 1.4 * Math.min(4, boost)) * dt; }
+      if (inp.twist) { const brake = this.hTwist * inp.twist < 0; this.hTwist += inp.twist * (brake ? T.airTwistTorque * 1.8 * (inp.twMax || 1) * BW : T.airTwistTorque * BW * clamp(1 - Math.abs(this.hTwist) / (T.maxTwistL * BW * (inp.twMax || 1)), 0, 1) * 1.4 * Math.min(4, boost)) * dt; }
       else this.hTwist *= Math.exp(-1.1 * dt);
     }
     // 2) postura → inercia
@@ -372,7 +422,7 @@ export class Athlete {
     this.trick.apex = Math.max(0, this.apexY - this.startComY);
     this.trick.add(this.omega.dot(this.tkRight), this.omega.dot(this.tkFwd), this.wTwist, dt, this.omega.y);
     if (inp.tuck > .5) this.trick.tucked += dt;
-    if (this.state === 'air') this.airContacts(dt, inp);
+    if (this.state === 'air') this.grabBar(); if (this.state === 'air') this.airContacts(dt, inp);
     if (this.com.y < -5) this.out();
   }
   // Mortal de una habilidad: reparte el giro que falta en el tiempo que queda, con correcciones limitadas
@@ -384,7 +434,7 @@ export class Athlete {
   timeToGround() {
     const v = this.vel.y, G = this.T.gravity; let t = .15;
     for (let i = 0; i < 3; i++) { // suelo bajo el punto donde va a caer
-      const g = this.world.ground(this.com.x + this.vel.x * t, this.com.z + this.vel.z * t, this.com.y - .5), h = this.com.y - .92 - (g ? g.y : 0);
+      const g = this.world.ground(this.com.x + this.vel.x * t, this.com.z + this.vel.z * t, this.com.y - .5), h = this.com.y - COM_H - (g ? g.y : 0);
       if (h <= 0) return 0; t = (v + Math.sqrt(v * v + 2 * G * h)) / G;
     }
     return t;

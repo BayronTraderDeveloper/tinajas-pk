@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { Skeleton, BONES, IDX } from './core/body.js';
 import { V, clamp } from './core/mathx.js';
+import { DEFAULT_LOOK, cleanLook } from './core/characters.js';
 
 const BIND = { uparmL: [0, 0, 48], uparmR: [0, 0, -48], thighL: [0, 0, 5], thighR: [0, 0, -5], shinL: [0, 0, 0], shinR: [0, 0, 0], footL: [0, 0, -5], footR: [0, 0, 5] };
 const H = 0.94;
@@ -36,7 +37,7 @@ P.torso = [
   ell('chest', [.072, .125, .062], [.085, .062, .045]), ell('chest', [-.072, .125, .062], [.085, .062, .045]),
   cone('chest', [.03, .235, -.03], [.165, .20, -.018], .05, .046), cone('chest', [-.03, .235, -.03], [-.165, .20, -.018], .05, .046),
 ];
-P.neck = [cone('neck', [0, -.05, -.012], [0, .02, -.004], .062, .055), cone('neck', [0, .02, -.004], [0, .115, .004], .055, .052)];
+P.neck = [cone('neck', [0, -.05, -.016], [0, .02, -.010], .050, .044), cone('neck', [0, .02, -.010], [0, .11, -.004], .044, .041)];
 const arm = (k, s) => [
   ell('uparm' + k, [.004 * s, -.02, 0], [.058, .075, .062]), cone('uparm' + k, [0, -.02, 0], [0, -.27, 0], .050, .040), ell('uparm' + k, [0, -.145, .02], [.037, .085, .036]), ell('uparm' + k, [0, -.12, -.022], [.037, .09, .034]),
   cone('forearm' + k, [0, 0, 0], [0, -.26, 0], .040, .0265), ell('forearm' + k, [.006 * s, -.075, .004], [.044, .09, .041]),
@@ -55,12 +56,18 @@ const hand = (k, s) => { const a = [ell('hand' + k, [0, -.05, 0], [.0185, .052, 
   a.push(cone('hand' + k, [0, -.02, .025], [-.010 * s, -.062, .052], .0135, .0115), cone('hand' + k, [-.010 * s, -.062, .052], [-.027 * s, -.092, .046], .011, .009), cone('forearm' + k, [0, -.20, 0], [0, -.275, 0], .0297, .0245)); return a; };
 P.handL = hand('L', 1); P.handR = hand('R', -1);
 P.head = [
-  ell('head', [0, .122, -.008], [.0765, .092, .098]), ell('head', [0, .078, .030], [.061, .085, .062]), ell('head', [0, .022, .042], [.047, .04, .045]), ell('head', [0, .0, .072], [.021, .017, .017]),
-  ell('head', [.038, .056, .060], [.025, .030, .022]), ell('head', [-.038, .056, .060], [.025, .030, .022]), ell('head', [.048, .022, .012], [.016, .035, .03]), ell('head', [-.048, .022, .012], [.016, .035, .03]),
-  cone('head', [.046, .103, .076], [.014, .101, .090], .0105, .0105), cone('head', [-.046, .103, .076], [-.014, .101, .090], .0105, .0105),
-  cone('head', [0, .096, .088], [0, .063, .108], .0085, .0125), ell('head', [.011, .057, .100], [.0095, .0085, .011]), ell('head', [-.011, .057, .100], [.0095, .0085, .011]),
-  ell('head', [0, .030, .088], [.022, .0062, .010]), ell('head', [0, .0195, .086], [.020, .0072, .010]),
-  ell('head', [.077, .076, -.008], [.011, .031, .019]), ell('head', [-.077, .076, -.008], [.011, .031, .019]),
+  // cráneo, masa de la cara, mandíbula y mentón
+  ell('head', [0, .124, -.012], [.0745, .089, .095]), ell('head', [0, .078, .026], [.0575, .080, .066]), ell('head', [0, .033, .036], [.0425, .034, .050]), ell('head', [0, .008, .066], [.0185, .0155, .0175]),
+  // pómulos y ángulos de la mandíbula, discretos
+  ell('head', [.039, .062, .058], [.020, .017, .018]), ell('head', [-.039, .062, .058], [.020, .017, .018]), ell('head', [.043, .032, .014], [.011, .022, .024]), ell('head', [-.043, .032, .014], [.011, .022, .024]),
+  // arco de las cejas
+  cone('head', [.045, .104, .077], [.013, .102, .091], .0085, .0085), cone('head', [-.045, .104, .077], [-.013, .102, .091], .0085, .0085),
+  // nariz: puente fino, punta y aletas pequeñas
+  cone('head', [0, .095, .090], [0, .064, .1055], .0062, .0092), ell('head', [0, .0585, .1035], [.0098, .0088, .0098]), ell('head', [.0098, .0555, .0965], [.0072, .0062, .0078]), ell('head', [-.0098, .0555, .0965], [.0072, .0062, .0078]),
+  // labios
+  ell('head', [0, .0312, .0905], [.0188, .0050, .0082]), ell('head', [0, .0205, .0885], [.0168, .0060, .0082]),
+  // orejas
+  ell('head', [.0765, .077, -.007], [.0095, .028, .0175]), ell('head', [-.0765, .077, -.007], [.0095, .028, .0175]),
 ];
 const foot = (k, s) => [cone('foot' + k, [0, -.026, -.048], [.004 * s, -.040, .10], .043, .037), ell('foot' + k, [.004 * s, -.044, .105], [.046, .034, .075]), cone('foot' + k, [0, .035, -.012], [0, -.02, -.008], .042, .046), ell('foot' + k, [0, -.02, .035], [.038, .04, .07])];
 P.footL = foot('L', 1); P.footR = foot('R', -1);
@@ -117,76 +124,99 @@ function striped(params, colorA) {
   };
   return m;
 }
-export const LOOK = { skin: '#b77b58', hair: '#1d1512', shirt: '#e9ecef', accent: '#e5482d', shorts: '#20262e', sock: '#f3f3f1', shoe: '#e5482d', sole: '#f6f5f0' };
-
-// Otro atleta con la misma malla y otro color de ropa (jugadores en línea)
-export function cloneCharacter(src, color) {
-  const g = cloneSkinned(src), by = {}; g.traverse(o => { if (o.isBone) by[o.name] = o; if (o.isSkinnedMesh) { o.frustumCulled = false; if (o.userData.cloth) { o.material = src.userData.mkCloth(); o.material.color.set(color); } } }); g.bones = BONES.map(b => by[b.name]); g.sync = syncBones(g.bones); return g;
-}
+export const LOOK = DEFAULT_LOOK;
 const syncBones = bones => a => { bones[0].position.copy(a.rootP); bones[0].quaternion.copy(a.rootQ); for (let i = 1; i < bones.length; i++) bones[i].quaternion.copy(a.sk.local[i]); };
-export function createCharacter(look = LOOK) {
+// Otro jugador: su propio personaje (mismo generador, su aspecto)
+export const cloneCharacter = (src, look) => createCharacter(look);
+// Personaje completo según su aspecto: cuerpo (altura y complexión), cara, pelo, barba y ropa
+export function createCharacter(look0 = DEFAULT_LOOK) {
+  const look = cleanLook(look0), kH = look.height / 1.78, kW = kH * (1 + .1 * look.build), inf = .008 * look.build;
   const group = new THREE.Group(), bones = BONES.map(b => { const o = new THREE.Bone(); o.name = b.name; return o; });
-  BONES.forEach((b, i) => { if (b.p >= 0) { bones[b.p].add(bones[i]); bones[i].position.copy(b.off); bones[i].quaternion.copy(sk.local[i]); } else bones[i].position.set(0, H, 0); });
+  BONES.forEach((b, i) => { const o = b.base.off; if (b.p >= 0) { bones[b.p].add(bones[i]); bones[i].position.set(o[0] * kW, o[1] * kH, o[2] * kW); bones[i].quaternion.copy(sk.local[i]); } else bones[i].position.set(0, H * kH, 0); });
   group.add(bones[0]); group.updateMatrixWorld(true);
   const skeleton = new THREE.Skeleton(bones);
-  const add = (geo, mat) => { const m = new THREE.SkinnedMesh(geo, mat); m.bind(skeleton, new THREE.Matrix4()); m.castShadow = m.receiveShadow = true; m.frustumCulled = false; group.add(m); return m; };
+  const add = (geo, mat) => { geo.scale(kW, kH, kW); const m = new THREE.SkinnedMesh(geo, mat); m.bind(skeleton, new THREE.Matrix4()); m.castShadow = m.receiveShadow = true; m.frustumCulled = false; group.add(m); return m; };
   const k = knit();
   const skinM = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: .56, sheen: .35, sheenRoughness: .5, sheenColor: new THREE.Color('#c9563c') });
-  const cloth = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: .86, sheen: .5, sheenRoughness: .6, bumpMap: k, bumpScale: .5, side: THREE.DoubleSide });
   const clothOpt = { vertexColors: true, roughness: .86, sheen: .5, sheenRoughness: .6, bumpMap: k, bumpScale: .5, side: THREE.DoubleSide };
-  const clothA = striped(clothOpt, look.accent), sockM = striped(clothOpt, look.accent), shoeM = striped({ vertexColors: true, roughness: .62, bumpMap: k, bumpScale: .4 }, '#fbfbf8'), soleM = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .5 }), hairM = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .72 });
+  const clothA = striped(clothOpt, look.accent), pantsM = striped(clothOpt, look.accent), sockM = striped(clothOpt, look.accent), shoeM = striped({ vertexColors: true, roughness: .62, bumpMap: k, bumpScale: .4 }, '#fbfbf8'), soleM = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .5 }), hairM = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .72 });
   const C = s => new THREE.Color(s), cs = C(look.skin), cFill = col => (x, y, z, c) => c.copy(col);
   const red = C('#a5543f'), dark = cs.clone().multiplyScalar(.78);
-  const LC = {}; for (const b of ['uparmL', 'uparmR', 'forearmL', 'forearmR', 'thighL', 'thighR', 'shinL', 'shinR', 'footL', 'footR', 'head', 'hips', 'chest', 'neck']) LC[b] = localCoord(b);
+  const LC = {}; for (const b of ['uparmL', 'uparmR', 'forearmL', 'forearmR', 'thighL', 'thighR', 'shinL', 'shinR', 'footL', 'footR', 'head', 'hips', 'chest', 'neck', 'spine']) LC[b] = localCoord(b);
   const skinCol = (x, y, z, c) => { c.copy(cs).offsetHSL(0, 0, noise(x * .6, y * .6, z * .6) * .012); };
-  // piel: brazos y piernas
+  const bareArms = look.top === 'tirantes' || look.top === 'sin', longSleeve = look.top === 'sudadera', pants = look.bottom === 'largo';
   for (const s of ['L', 'R']) {
-    let f = uni(P['arm' + s], .03); add(build((x, y, z) => smax(f(x, y, z), Math.max(LC['uparm' + s](x, y, z).y + .06, -LC['forearm' + s](x, y, z).y - .238), .004), P['arm' + s], P['arm' + s], .0085, skinCol), skinM);
-    f = uni(P['leg' + s], .035); add(build((x, y, z) => Math.max(f(x, y, z), LC['thigh' + s](x, y, z).y + .16, -LC['shin' + s](x, y, z).y - .34), P['leg' + s], P['leg' + s], .0095, skinCol), skinM);
+    let f = uni(P['arm' + s], .03); add(build((x, y, z) => smax(f(x, y, z) - inf, Math.max(bareArms ? -9 : LC['uparm' + s](x, y, z).y + .06, -LC['forearm' + s](x, y, z).y - .238), .004), P['arm' + s], P['arm' + s], .0085, skinCol), skinM);
+    if (!pants) { f = uni(P['leg' + s], .035); add(build((x, y, z) => Math.max(f(x, y, z) - inf, LC['thigh' + s](x, y, z).y + .16, -LC['shin' + s](x, y, z).y - .34), P['leg' + s], P['leg' + s], .0095, skinCol), skinM); }
     f = uni(P['hand' + s], .012); add(build((x, y, z) => Math.max(f(x, y, z), LC['forearm' + s](x, y, z).y + .228), P['hand' + s], P['hand' + s], .0042, skinCol, .012), skinM);
-    // calcetín
     const lf = uni(P['leg' + s], .035), shinP = P['leg' + s].filter(p => p.b.startsWith('shin'));
-    add(build((x, y, z) => { const q = LC['shin' + s](x, y, z); return smax(lf(x, y, z) - .005 - .0012 * Math.sin(q.y * 420), Math.max(q.y + .285, -q.y - .42), .006); }, shinP, shinP, .007, cFill(C(look.sock)), .03, (x, y, z) => Math.abs(LC['shin' + s](x, y, z).y + .312) - .005), sockM);
-    // zapatilla
+    if (!pants) add(build((x, y, z) => { const q = LC['shin' + s](x, y, z); return smax(lf(x, y, z) - inf - .005 - .0012 * Math.sin(q.y * 420), Math.max(q.y + .285, -q.y - .42), .006); }, shinP, shinP, .007, cFill(C(look.sock)), .03, (x, y, z) => Math.abs(LC['shin' + s](x, y, z).y + .312) - .005), sockM);
     const ff = uni(P['foot' + s], .035), sg = s === 'L' ? 1 : -1;
     add(build((x, y, z) => { const q = LC['foot' + s](x, y, z); return smax(smax(ff(x, y, z), -q.y - .052, .01), q.y - .018 - Math.max(0, -q.z) * .25, .008); }, P['foot' + s], P['foot' + s], .0055, (x, y, z, c) => {
-      const q = LC['foot' + s](x, y, z); c.set(look.shoe); if (q.z > .118 && q.y < -.036) c.set('#cc3c22'); }, .03, (x, y, z) => { const q = LC['foot' + s](x, y, z); const laces = Math.max(Math.abs(q.x) - .016, q.z - .085, .008 - q.z, Math.abs(((q.z + .2) % .019) - .0095) - .0045); const swoop = Math.max(Math.abs(q.y + .031 - (q.z - .015) * .3) - .006, .028 - Math.abs(q.x), q.z - .07, -.035 - q.z); return Math.min(laces, swoop); }), shoeM);
+      const q = LC['foot' + s](x, y, z); c.set(look.shoe); if (q.z > .118 && q.y < -.036) c.copy(C(look.shoe)).multiplyScalar(.82); }, .03, (x, y, z) => { const q = LC['foot' + s](x, y, z); const laces = Math.max(Math.abs(q.x) - .016, q.z - .085, .008 - q.z, Math.abs(((q.z + .2) % .019) - .0095) - .0045); const swoop = Math.max(Math.abs(q.y + .031 - (q.z - .015) * .3) - .006, .028 - Math.abs(q.x), q.z - .07, -.035 - q.z); return Math.min(laces, swoop); }), shoeM);
     const soleF = (x, y, z) => { const q = LC['foot' + s](x, y, z), zc = (q.z - .05) / .132, wd = .0405 + .008 * clamp(q.z / .1, -.3, 1) - .006 * Math.max(0, 1 - Math.abs(q.z - .02) / .05), ex = Math.hypot((q.x - .003 * sg) / wd, Math.sign(zc) * Math.pow(Math.abs(zc), 1.9)) - 1; return smax(ex * wd * .8, Math.abs(q.y + .0585 - Math.max(0, q.z - .1) * .12) - .0125, .008); };
-    add(build(soleF, P['foot' + s], [P['foot' + s][0]], .005, (x, y, z, c) => c.set(LC['foot' + s](x, y, z).y < -.066 ? '#2a2c30' : look.sole)), soleM);
+    add(build(soleF, P['foot' + s], [P['foot' + s][0]], .005, (x, y, z, c) => c.set(LC['foot' + s](x, y, z).y < -.066 ? '#2a2c30' : '#f6f5f0')), soleM);
   }
-  // camiseta
-  const shirtP = [...P.torso, ...P.armL.slice(0, 4), ...P.armR.slice(0, 4)], sf = uni([...shirtP, P.legL[0], P.legR[0], P.legL[3], P.legR[3]], .04), neckF = uni([P.neck[0]], .02);
-  const shirt = (x, y, z) => {
-    const l = LC.uparmL(x, y, z), ly = l.y, lx = l.x, r = LC.uparmR(x, y, z), ry = r.y, rx = r.x, hp = LC.hips(x, y, z).y, side = x > 0 ? ly : ry;
-    const hem = clamp((.12 - hp) / .2, 0, 1), sl = Math.abs(x) > .17 ? clamp((-side - .04) / .12, 0, 1) : 0;
-    let d = sf(x, y, z) - .010 - hem * .016 - sl * .008 - noise(x, y, z) * (.0022 + .003 * hem) - Math.sin(y * 46 + x * 18) * .0016 * hem;
-    d = smax(d, Math.abs(x) > .16 && LC.chest(x, y, z).y > -.06 ? -side - .165 : -9, .004); d = smax(d, -hp - .085, .004);
-    return smax(d, -(neckF(x, y, z) - .014 - Math.max(0, z) * .12), .012);
-  };
-  const acc = C(look.accent), sh = C(look.shirt);
-  add(build(shirt, shirtP, shirtP, .009, cFill(sh), .03, (x, y, z) => { const ch = LC.chest(x, y, z); const band = Math.max(Math.abs(ch.y - .03 + Math.abs(x) * .3) - .02, Math.abs(x) - .2); const s = x > 0 ? LC.uparmL(x, y, z) : LC.uparmR(x, y, z); const cuff = Math.max(s.y + .147, .2 - Math.abs(x), -.06 - ch.y); const col = Math.max(neckF(x, y, z) - .021 - Math.max(0, z) * .12, (z < -.03 ? .225 : .19) - ch.y); return Math.min(band, cuff, col); }), clothA);
-  // shorts
-  const shortsP = [P.torso[0], P.torso[1], P.torso[2], ...P.legL.slice(0, 4), ...P.legR.slice(0, 4)], A = uni([P.torso[0], P.torso[1], P.torso[2]], .04), B = uni(P.legL.slice(0, 4), .035), D = uni(P.legR.slice(0, 4), .035);
-  add(build((x, y, z) => { const l = LC[x > 0 ? 'thighL' : 'thighR'](x, y, z), fl = clamp((-l.y - .04) / .22, 0, 1); let d = smin(smin(A(x, y, z), x > 0 ? B(x, y, z) : D(x, y, z), .05), x > 0 ? D(x, y, z) : B(x, y, z), .015) - .012 - fl * .017 - noise(x * .8, y * .8, z * .8) * (.002 + .005 * fl); d = smax(d, -l.y - .262, .004); return smax(d, LC.hips(x, y, z).y + .02, .004); }, shortsP, shortsP, .0095, cFill(C(look.shorts)), .03, (x, y, z) => { const l = LC[x > 0 ? 'thighL' : 'thighR'](x, y, z); return Math.max(Math.abs(l.z + .005) - .011, .05 - l.x * Math.sign(x)); }), clothA);
+  const torsoF = uni([...P.torso, P.legL[0], P.legR[0], P.legL[3], P.legR[3]], .04), neckF = uni([P.neck[0]], .02);
+  // torso al aire (tirantes o sin camiseta): pecho y abdomen marcados según la complexión
+  if (bareArms) {
+    const tp = [...P.torso, P.armL[0], P.armR[0]], tf = uni([...tp, P.legL[0], P.legR[0]], .045);
+    add(build((x, y, z) => { const hp = LC.hips(x, y, z).y; let d = tf(x, y, z) - inf - .001; d = smin(d, neckF(x, y, z), .03); return smax(d, -hp - .07, .01); }, tp, tp, .009, (x, y, z, c) => { skinCol(x, y, z, c); const ch = LC.chest(x, y, z), sp = LC.spine(x, y, z); if (z > .05) { const pec = Math.abs(ch.y - .055) < .006 && Math.abs(x) > .015 && Math.abs(x) < .12, ab = sp.y > -.02 && sp.y < .14 && (Math.abs(x) < .004 || Math.abs((sp.y % .05) - .025) < .003) && Math.abs(x) < .05; if (pec || ab) c.multiplyScalar(1 - .06 * (.4 + look.build)); } }), skinM);
+  }
+  // parte de arriba
+  if (look.top !== 'sin') {
+    const tank = look.top === 'tirantes', hood = look.top === 'sudadera', thick = hood ? .016 : .010;
+    const shirtP = tank ? [...P.torso] : hood ? [...P.torso, ...P.armL, ...P.armR] : [...P.torso, ...P.armL.slice(0, 4), ...P.armR.slice(0, 4)], sf = uni([...shirtP, P.legL[0], P.legR[0], P.legL[3], P.legR[3]], .04);
+    const shirt = (x, y, z) => {
+      const l = LC.uparmL(x, y, z), ly = l.y, r = LC.uparmR(x, y, z), ry = r.y, hp = LC.hips(x, y, z).y, side = x > 0 ? ly : ry, ch = LC.chest(x, y, z);
+      const hem = clamp((.12 - hp) / .2, 0, 1), sl = Math.abs(x) > .17 ? clamp((-side - .04) / .12, 0, 1) : 0;
+      let d = sf(x, y, z) - inf - thick - hem * .016 - sl * .008 - noise(x, y, z) * (.0022 + .003 * hem) - Math.sin(y * 46 + x * 18) * .0016 * hem;
+      if (hood) { const fa = x > 0 ? LC.forearmL(x, y, z) : LC.forearmR(x, y, z); d = smax(d, -fa.y - .232, .004); d = smin(d, Math.hypot(ch.x / .105, (ch.y - .255) / .06, (ch.z + .075) / .06) * .06 - .06, .03); }
+      else if (tank) { d = smax(d, -(Math.hypot(Math.abs(ch.x) - .2, ch.y - .2, ch.z + .005) - .095), .012); d = smax(d, -(Math.hypot(ch.x * .9, ch.y - .26, Math.max(0, ch.z - .02) * 1.4) - .075), .01); }
+      else d = smax(d, Math.abs(x) > .16 && ch.y > -.06 ? -side - .165 : -9, .004);
+      d = smax(d, -hp - .085, .004);
+      return smax(d, -(neckF(x, y, z) - .014 - Math.max(0, z) * .12), .012);
+    };
+    const sh = C(look.shirt);
+    add(build(shirt, shirtP, shirtP, .009, cFill(sh), .03, (x, y, z) => { const ch = LC.chest(x, y, z); const band = Math.max(Math.abs(ch.y - .03 + Math.abs(x) * .3) - .02, Math.abs(x) - .2); const s2 = x > 0 ? LC.uparmL(x, y, z) : LC.uparmR(x, y, z), fa = x > 0 ? LC.forearmL(x, y, z) : LC.forearmR(x, y, z); const cuff = hood ? Math.abs(fa.y + .22) - .012 : Math.max(s2.y + .147, .2 - Math.abs(x), -.06 - ch.y); const col = Math.max(neckF(x, y, z) - .021 - Math.max(0, z) * .12, (z < -.03 ? .225 : .19) - ch.y); return Math.min(tank ? 9 : band, cuff, col); }), clothA);
+  }
+  // pantalón: corto o largo hasta el tobillo, con franja lateral
+  const shortsP = [P.torso[0], P.torso[1], P.torso[2], ...P.legL.slice(0, pants ? 8 : 4), ...P.legR.slice(0, pants ? 8 : 4)], A = uni([P.torso[0], P.torso[1], P.torso[2]], .04), B = uni(P.legL.slice(0, pants ? 8 : 4), .035), D = uni(P.legR.slice(0, pants ? 8 : 4), .035);
+  add(build((x, y, z) => { const l = LC[x > 0 ? 'thighL' : 'thighR'](x, y, z), sh2 = LC[x > 0 ? 'shinL' : 'shinR'](x, y, z), fl = clamp((-l.y - .04) / .22, 0, 1); let d = smin(smin(A(x, y, z), x > 0 ? B(x, y, z) : D(x, y, z), .05), x > 0 ? D(x, y, z) : B(x, y, z), .015) - inf - .012 - fl * (pants ? .010 : .017) - noise(x * .8, y * .8, z * .8) * (.002 + .005 * fl); d = smax(d, pants ? -sh2.y - .36 : -l.y - .262, .004); return smax(d, LC.hips(x, y, z).y + .02, .004); }, shortsP, shortsP, .0095, cFill(C(look.shorts)), .03, (x, y, z) => { const l = LC[x > 0 ? 'thighL' : 'thighR'](x, y, z); return Math.max(Math.abs(l.z + .005) - .011, .05 - l.x * Math.sign(x)); }), pantsM);
   // cabeza
-  const hf = uni(P.head, .016), nk = uni(P.neck, .03);
+  const hf = uni(P.head, .014), nk = uni(P.neck, .03);
   const sock = (x, y, z) => { const q = LC.head(x, y, z); return Math.hypot((Math.abs(q.x) - .031) / 1.25, q.y - .0855, q.z - .098) - .0155; };
-  const mouth = (x, y, z) => { const q = LC.head(x, y, z); return Math.max(Math.hypot((q.y - .0252) * 1, q.z - .098) - .0035, Math.abs(q.x) - .019); };
-  const headF = (x, y, z) => { let d = smin(hf(x, y, z), nk(x, y, z), .04); d = smax(d, -sock(x, y, z), .012); d = smax(d, -mouth(x, y, z), .004); return Math.max(d, -(y - (toBind('neck', [0, -.05, 0]).y))); };
-  add(build(headF, [...P.head, ...P.neck], [...P.head.slice(0, 1), ...P.head.slice(2, 3), ...P.neck, cone('chest', [-.06, .2, -.01], [.06, .2, -.01], .05, .05)], .0046, (x, y, z, c) => {
-    const q = LC.head(x, y, z); c.copy(cs); const lip = Math.hypot(q.x / .023, (q.y - .0245) / .0125); if (lip < 1 && q.z > .085) c.lerp(red, .6 * (1 - lip * .4)); const ck = Math.hypot(Math.abs(q.x) - .042, q.y - .055); c.lerp(red, Math.max(0, .16 - ck * 4) * (q.z > .03 ? 1 : 0)); const es = sock(x, y, z); if (q.z > .05 && es < .006) c.lerp(dark, .5);
-    const beard = q.z > -.01 && q.y < .042 && q.y > -.03 && lip > 1.25 ? .13 : 0; c.lerp(new THREE.Color('#4a3a33'), beard);
+  const mouth = (x, y, z) => { const q = LC.head(x, y, z); return Math.max(Math.hypot((q.y - .0258) * 1, q.z - .097) - .0028, Math.abs(q.x) - .0175); };
+  const headF = (x, y, z) => { let d = smin(hf(x, y, z), nk(x, y, z), .035); d = smax(d, -sock(x, y, z), .012); d = smax(d, -mouth(x, y, z), .004); return Math.max(d, -(y - (toBind('neck', [0, -.05, 0]).y))); };
+  const beardC = C(look.hairColor), beardOn = look.beard !== 'no';
+  add(build(headF, [...P.head, ...P.neck], [...P.head.slice(0, 1), ...P.head.slice(2, 3), ...P.neck, cone('chest', [-.06, .2, -.01], [.06, .2, -.01], .05, .05)], .0042, (x, y, z, c) => {
+    const q = LC.head(x, y, z); c.copy(cs); const lip = Math.hypot(q.x / .021, (q.y - .026) / .0115); if (lip < 1 && q.z > .084) c.lerp(red, .45 * (1 - lip * .5)); const ck = Math.hypot(Math.abs(q.x) - .040, q.y - .058); c.lerp(red, Math.max(0, .10 - ck * 3) * (q.z > .03 ? 1 : 0)); const es = sock(x, y, z); if (q.z > .05 && es < .005) c.lerp(dark, .35);
+    if (beardOn && q.z > -.005 && lip > 1.2) { const jaw = q.y < .05 - Math.max(0, Math.abs(q.x) - .03) * .4 && q.y > -.03, goatee = Math.abs(q.x) < .023 && q.y < .019 && q.y > -.012, stache = Math.abs(q.x) < .024 && q.y > .033 && q.y < .043 && q.z > .08; if (look.beard === 'corta' ? jaw : goatee || stache) c.lerp(beardC, .62); }
   }, .012), skinM);
-  // pelo y cejas
-  const cr = uni([P.head[0]], .01), hairF = (x, y, z) => { const q = LC.head(x, y, z); const top = clamp((q.y - .13) / .07, 0, 1); const st = Math.sin(q.x * 260 + Math.sin(q.z * 90) * 2) * .0016 + noise(x * 2.4, y * 2.4, z * 2.4) * .0035 * top; const line = .105 + .62 * q.z + (Math.abs(q.x) > .055 ? -.012 : 0) + .0035 * Math.sin(q.x * 150); return smax(cr(x, y, z) - .007 - .013 * top * (1 + q.z * 4) - st, line - q.y, .012); };
-  add(build(hairF, [P.head[0]], [P.head[0]], .0048, (x, y, z, c) => c.set(look.hair).offsetHSL(0, 0, Math.max(0, Math.sin(x * 260)) * .02), .03), hairM);
-  const brow = [cone('head', [.047, .1055, .081], [.030, .110, .0955], .0035, .0042), cone('head', [.030, .110, .0955], [.013, .1055, .1015], .0042, .0034), cone('head', [-.047, .1055, .081], [-.030, .110, .0955], .0035, .0042), cone('head', [-.030, .110, .0955], [-.013, .1055, .1015], .0042, .0034)];
-  add(build(uni(brow, .004), brow, brow, .0026, cFill(C(look.hair)), .01), hairM);
-  // ojos
-  const eyeW = new THREE.MeshPhysicalMaterial({ color: '#f2eee8', roughness: .18, clearcoat: 1 }), iris = new THREE.MeshPhysicalMaterial({ color: '#4a2c17', roughness: .12, clearcoat: 1 }), pup = new THREE.MeshBasicMaterial({ color: '#050505' });
+  // pelo: corto, rapado, largo o rizado
+  const cr = uni([P.head[0]], .01), hairTone = (x, y, z, c) => { c.set(look.hairColor).offsetHSL(0, 0, Math.max(0, Math.sin(x * 260 + z * 40)) * .03 - .01); if (look.hair === 'rapado') c.lerp(cs, .42); };   // rapado: se ve la piel
+  const HAIRF = {
+    corto: (x, y, z) => { const q = LC.head(x, y, z); const top = clamp((q.y - .13) / .07, 0, 1); const st = Math.sin(q.x * 260 + Math.sin(q.z * 90) * 2) * .0016 + noise(x * 2.4, y * 2.4, z * 2.4) * .0035 * top; const line = .105 + .62 * q.z + (Math.abs(q.x) > .055 ? -.012 : 0) + .0035 * Math.sin(q.x * 150); return smax(cr(x, y, z) - .007 - .013 * top * (1 + q.z * 4) - st, line - q.y, .012); },
+    rapado: (x, y, z) => { const q = LC.head(x, y, z); const line = .098 + .6 * q.z + (Math.abs(q.x) > .055 ? -.01 : 0); return smax(cr(x, y, z) - .0028 - noise(x * 4, y * 4, z * 4) * .0006, line - q.y, .008); },
+    // largo: pegado arriba, raya al lado, cae por los lados hasta la mandíbula y por detrás hasta la nuca
+    largo: (x, y, z) => { const q = LC.head(x, y, z), drop = clamp((.13 - q.y) / .1, 0, 1); const st = Math.sin(q.x * 300 + q.y * 30) * .0018 * drop + Math.sin(q.z * 220 + q.x * 60) * .0012; const yb = q.z > .06 ? .118 + .12 * Math.max(0, q.x + .01) : q.z > .0 ? .045 - .2 * Math.max(0, q.z - .03) : .01, part = Math.exp(-Math.pow((q.x + .022) / .006, 2)) * clamp((q.y - .16) / .03, 0, 1) * .004; return smax(cr(x, y, z) - .0075 - .009 * drop - st + part, yb - q.y, .012); },
+    rizado: (x, y, z) => { const q = LC.head(x, y, z); const curl = (Math.sin(q.x * 230) * Math.sin(q.y * 210) * Math.sin(q.z * 220)) * .0045 + noise(x * 3, y * 3, z * 3) * .003; const line = .102 + .58 * q.z; return smax(cr(x, y, z) - .022 - curl, line - q.y, .014); },
+  };
+  add(build(HAIRF[look.hair], [P.head[0]], [P.head[0]], .0046, hairTone, .045), hairM);
+  const brow = [cone('head', [.046, .1055, .081], [.030, .1095, .0955], .0028, .0036), cone('head', [.030, .1095, .0955], [.013, .1055, .1015], .0036, .0030), cone('head', [-.046, .1055, .081], [-.030, .1095, .0955], .0028, .0036), cone('head', [-.030, .1095, .0955], [-.013, .1055, .1015], .0036, .0030)];
+  add(build(uni(brow, .004), brow, brow, .0026, cFill(C(look.hairColor).multiplyScalar(.8)), .01), hairM);
+  // ojos con párpados: miran tranquilos, sin saltarse de la cara
+  const eyeW = new THREE.MeshPhysicalMaterial({ color: '#f2eee8', roughness: .18, clearcoat: 1 }), iris = new THREE.MeshPhysicalMaterial({ color: look.eyes, roughness: .12, clearcoat: 1 }), pup = new THREE.MeshBasicMaterial({ color: '#050505' }), lidM = new THREE.MeshStandardMaterial({ color: cs.clone().multiplyScalar(.92), roughness: .6 }), lashM = new THREE.MeshStandardMaterial({ color: '#15100d', roughness: .8 });
   const head = bones[IDX.head];
-  for (const s of [1, -1]) { const e = new THREE.Group(); e.position.set(.031 * s, .0855, .0745); e.add(new THREE.Mesh(new THREE.SphereGeometry(.0138, 24, 16), eyeW)); const cap = (r, a, m) => { const o = new THREE.Mesh(new THREE.SphereGeometry(r, 20, 8, 0, Math.PI * 2, 0, a), m); o.rotation.x = Math.PI / 2; e.add(o); }; cap(.0141, .46, iris); cap(.01425, .2, pup); head.add(e); }
-  group.bones = bones;
-  group.sync = syncBones(bones); group.tint = c => clothA.color.set(c); group.userData = {}; for (const m of group.children) if (m.material === clothA) m.userData.cloth = true; Object.defineProperty(group.userData, 'mkCloth', { value: () => striped(clothOpt, look.accent), enumerable: false });
+  for (const s of [1, -1]) {
+    const e = new THREE.Group(); e.position.set(.031 * s * (kW / kW), .0855, .0738); e.add(new THREE.Mesh(new THREE.SphereGeometry(.0134, 24, 16), eyeW)); const cap = (r, a, m) => { const o = new THREE.Mesh(new THREE.SphereGeometry(r, 20, 8, 0, Math.PI * 2, 0, a), m); o.rotation.x = Math.PI / 2; e.add(o); }; cap(.0137, .48, iris); cap(.01385, .22, pup);
+    const lid = (r, a, rx, m) => { const o = new THREE.Mesh(new THREE.SphereGeometry(r, 24, 10, 0, Math.PI * 2, 0, a), m); o.rotation.x = rx; e.add(o); return o; };
+    lid(.0146, .82, .42, lidM); lid(.0148, .16, 1.12, lashM).scale.set(1, .6, 1); lid(.0145, .5, Math.PI - .45, lidM);
+    e.scale.set(1 / kW * kW, 1, 1); head.add(e);
+  }
+  // los ojos van en el hueso de la cabeza (sin la escala de la malla): se colocan a la escala del personaje
+  head.children.forEach(o => { if (o.isGroup) { o.position.set(o.position.x * kW, o.position.y * kH, o.position.z * kW); o.scale.set(kW, kH, kW); } });
+  group.bones = bones; group.look = look;
+  group.sync = syncBones(bones);
   return group;
 }

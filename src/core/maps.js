@@ -8,10 +8,10 @@ export const LAB = {
   items: [
     { t: 'stairs', x: -14.825, w: 3.6, h: 2, d: 2.6 }, { t: 'block', x: -11.9, w: 2.2, h: 2, d: 2.6, calm: true }, { t: 'foam', x: -8.5, w: 4.6, h: .6, d: 3.2 },
     { t: 'block', x: -3.4, w: 1.8, h: .5, d: 2.6 }, { t: 'block', x: -1.7, w: 1.6, h: 1, d: 2.6 }, { t: 'track', x: 3.6, w: 7, h: .12, d: 2.8 },
-    { t: 'tramp', x: 11, w: 4.6, h: .95, d: 2.8 }, { t: 'stairs', x: 7.62, w: 1.35, h: .72, d: 1.8 }, { t: 'mat', x: 15.9, w: 4, h: .4, d: 3.2 },
+    { t: 'tramp', x: 11, w: 4.6, h: .95, d: 2.8 }, { t: 'stairs', x: 7.62, w: 1.35, h: .72, d: 1.8 }, { t: 'mat', x: 15.9, w: 4, h: .4, d: 3.2 }, { t: 'bar', x: 20.6, w: .2, h: 2.45, d: 2.4 }, { t: 'mat', x: 22.6, w: 3.4, h: .3, d: 3 },
     ...[[27.5, .8, .9], [38, 2.2, .95], [48.5, 1.1, 1.05], [59.5, 2.8, 1]].map(([x, w, h]) => ({ t: 'vault', x, w, h, d: 2.6 })), ...[[73, 1.2], [84, 1.6], [96, 2]].map(([x, h]) => ({ t: 'wall', x, w: .6, h, d: 3 })),
   ].map(i => ({ y: 0, z: 0, r: 0, ...i })),
-  spawns: [['Suelo', -5.6], ['Pista', .5, .12], ['Trampolín', 11, .95], ['Plataforma 2 m', -11.6, 2], ['Kong', 19.5], ['Doble kong', 29.5], ['Muralla 1,2 m', 64.5], ['Muralla 1,6 m', 75.5], ['Muralla 2 m', 87.5]].map(([name, x, y = 0]) => ({ name, x, y, z: 0, yaw: R })),
+  spawns: [['Suelo', -5.6], ['Pista', .5, .12], ['Trampolín', 11, .95], ['Barra', 19.9], ['Plataforma 2 m', -11.6, 2], ['Kong', 19.5], ['Doble kong', 29.5], ['Muralla 1,2 m', 64.5], ['Muralla 1,6 m', 75.5], ['Muralla 2 m', 87.5]].map(([name, x, y = 0]) => ({ name, x, y, z: 0, yaw: R })),
 };
 // Niveles 2D: no se camina. Se da dirección, se salta, se mezclan trucos en el aire y hay que caer en cada objetivo, en orden.
 const Z = (x, y, trick = 'none', w = 1.4, o = {}) => I('zone', x, { y, w, trick, ...o });
@@ -43,7 +43,7 @@ export const MAPS_3D = [
     I('mat', 12, { z: 14, w: 8, h: .4, d: 8 }), I('block', 12, { z: 20, w: 6, h: 1.2, d: 2.4 }), I('track', -14, { z: -12, w: 14, d: 3 }), I('block', 0, { z: 18, w: 3, h: .5, d: 3, r: 20 })]),
   L3('m2', 'Gimnasio', 'Sala con trampolines, pista y foso de espuma', 'gym', 18, [
     I('track', 0, { z: -4, w: 24, d: 3 }), I('tramp', -8, { z: 5, w: 5, d: 4 }), I('stairs', -12.5, { z: 5, w: 1.35, h: .72, d: 2.4 }), I('tramp', 8, { z: 5, w: 5, d: 4 }), I('stairs', 12.5, { z: 5, w: 1.35, h: .72, d: 2.4, r: 180 }), I('mat', 0, { z: 5, w: 6, h: .4, d: 6 }),
-    I('foam', 0, { z: 13.5, w: 10, h: .6, d: 6 }), I('block', -8.5, { z: 13.5, w: 4, h: 2, d: 4 }), I('stairs', -12.3, { z: 13.5, w: 3.6, h: 2, d: 3 }), I('vault', 9, { z: -10, w: .9, h: .95, d: 3 }), I('vault', -8, { z: -10, w: 2.2, h: .95, d: 3 }), I('wall', 15, { z: -4, w: .6, h: 1.6, d: 5 })]),
+    I('foam', 0, { z: 13.5, w: 10, h: .6, d: 6 }), I('block', -8.5, { z: 13.5, w: 4, h: 2, d: 4 }), I('stairs', -12.3, { z: 13.5, w: 3.6, h: 2, d: 3 }), I('vault', 9, { z: -10, w: .9, h: .95, d: 3 }), I('vault', -8, { z: -10, w: 2.2, h: .95, d: 3 }), I('wall', 15, { z: -4, w: .6, h: 1.6, d: 5 }), I('bar', 12, { z: 12, w: .2, h: 2.45, d: 2.4, r: 90 }), I('mat', 12, { z: 14.5, w: 3, h: .3, d: 4 }), I('bar', -14, { z: -1, w: .2, h: 2.6, d: 2.4 })]),
   L3('m3', 'Azotea', 'Terraza con desniveles sobre la ciudad', 'roof', 22, [
     I('block', -10, { z: 4, w: 8, h: 1.2, d: 8 }), I('stairs', -10, { z: -1.1, w: 2.25, h: 1.2, d: 4, r: -90 }), I('block', -11, { z: 13, w: 6, h: 2, d: 6 }), I('block', 0, { z: 10, w: 5, h: 1, d: 5 }), I('block', 8, { z: 12, w: 4, h: .6, d: 4 }), I('foam', 8, { z: 2, w: 6, h: .6, d: 6 }), I('wall', 14, { z: -4, w: .6, h: 2, d: 8 }), I('wall', 4, { z: -8, w: .6, h: 1.2, d: 4, r: 60 }),
     I('vault', -2, { z: -6, w: 1, h: .95, d: 3, r: 90 }), I('vault', -9, { z: -10, w: 2.4, h: .95, d: 2.6 }), I('mat', 12, { z: 14, w: 5, h: .4, d: 8 }), I('block', 16, { z: 10, w: 3, h: 1.5, d: 3 })]),

@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import { Athlete, GRADES } from './core/athlete.js';
 import { AirControl, MOVES } from './core/control.js';
 import { makeTuning } from './core/tuning.js';
-import { BONES, CONTACTS } from './core/body.js';
+import { BONES, CONTACTS, setBody } from './core/body.js';
+import { Roster, applyStats, lookKey, cleanLook } from './core/characters.js';
 import { VaultSense, VAULTS, REACH } from './core/vaults.js';
 import { Abilities } from './core/abilities.js';
 import { buildWorld, sanitize } from './core/levels.js';
@@ -11,7 +12,7 @@ import { LevelRun, Progress, Library, Rank, taskText } from './core/run.js';
 import { Upgrades } from './core/upgrades.js';
 import { NAMES } from './core/score.js';
 import { createStage } from './scene.js';
-import { createCharacter, cloneCharacter } from './character.js';
+import { createCharacter } from './character.js';
 import { Input } from './input.js';
 import { Slots, TRICKS } from './slots.js';
 import { Cam } from './camera.js';
@@ -20,6 +21,7 @@ import { Menu } from './menu.js';
 import { Editor } from './editor.js';
 import { Viewer } from './viewer.js';
 import { Room, COLORS, newCode } from './net/room.js';
+import * as net from './net/nostr.js';
 import { damp } from './core/mathx.js';
 
 const canvas = document.getElementById('view'), ui = document.getElementById('ui'), edRoot = document.getElementById('editor');
@@ -29,9 +31,10 @@ await new Promise(r => setTimeout(r, 30));
 const tuning = makeTuning(); try { Object.assign(tuning, JSON.parse(localStorage.getItem('tinajas.tuning.v1') || '{}')); } catch { }
 let world = buildWorld(MAPS_3D[0]), run = new LevelRun(world);
 const stage = createStage(renderer), { scene, dust } = stage, camera = new THREE.PerspectiveCamera(24, 1, .3, 400);
-const upgrades = new Upgrades(), rank = new Rank(), eff = upgrades.apply(tuning, makeTuning()), retune = () => { upgrades.apply(tuning, eff); run.score.style = eff.style; };
-const athlete = new Athlete(world, eff), body = createCharacter(); scene.add(body);
-const control = new AirControl(athlete), abilities = new Abilities(), sense = new VaultSense(athlete, abilities);
+const roster = new Roster(); let hero = roster.current; setBody(hero.look);
+const upgrades = new Upgrades(), rank = new Rank(), eff = applyStats(upgrades.apply(tuning, makeTuning()), hero.stats), retune = () => { applyStats(upgrades.apply(tuning, eff), hero.stats); run.score.style = eff.style; };
+const athlete = new Athlete(world, eff); let body = createCharacter(hero.look); scene.add(body);
+const control = new AirControl(athlete), abilities = new Abilities(), sense = new VaultSense(athlete, abilities); abilities.set = new Set(hero.abilities);
 const slots = new Slots(), input = new Input(canvas), cam = new Cam(camera, world), progress = new Progress(), lib = new Library(sanitize);
 const view = { traj: true, mom: false, bones: false, cont: false };
 let app = 'menu', from = 'home', testing = false, level = MAPS_3D[0], curInp = {}, quality = 1.5, slowT = 0, paused = false, slow = false, scale = 1, time = 0, spawnI = 0, room = null, netOk = true, countdown = 0, doneT = 0;
@@ -54,24 +57,31 @@ const nextLevel = () => { const L = level.mode === '2d' ? LEVELS_2D : [], i = L.
 // ── En línea ──
 const avatars = new Map();
 const cb = {
-  state: ok => { netOk = ok; hud.players(room, netOk); }, change: () => room && hud.players(room, netOk),
-  join: p => { const m = cloneCharacter(body, COLORS[p.color]); m.visible = false; scene.add(m); avatars.set(p.id, m); if (room) hud.feed(p.name, 'entró en la sala'); },
+  state: ok => { netOk = ok; hud.players(room, netOk); }, change: () => { if (room) { hud.players(room, netOk); clearTimeout(cb.at); cb.at = setTimeout(announce, 1500); } },
+  join: p => { const m = avatarFor(p.look); m.visible = false; scene.add(m); avatars.set(p.id, m); if (room) hud.feed(p.name, 'entró en la sala'); },
   leave: p => { const m = avatars.get(p.id); if (m) { scene.remove(m); avatars.delete(p.id); } hud.feed(p.name, 'salió de la sala'); },
   level: l => { if (app === 'play' && room) { load(l); hud.say('Nivel: ' + l.name); } else pendingLevel?.(l); hud.players(room, netOk); },
   feed: (p, name, lvl) => hud.feed(p.name, name, lvl >= 4 ? '#8fd694' : lvl >= 2 ? '#f2c14e' : '#ef6a5a'),
   finish: (p, t, s) => { hud.feed(p.name, `terminó con ${'★'.repeat(s)}`, '#ffc531'); hud.players(room, netOk); }, race: () => startRace(),
 };
 let pendingLevel = null;
-function leaveRoom() { if (!room) return; const r = room; room = null; r.leave(); for (const m of avatars.values()) scene.remove(m); avatars.clear(); hud.players(null); hud.tags([]); }
-async function host(l, prof) { leaveRoom(); const r = new Room(newCode(), prof, cb); await r.join(l.lab ? l : sanitize(l)); room = r; from = 'net'; play(l); hud.players(room, netOk); }
+// Personajes: cada jugador se ve con el suyo (se generan una vez y se reutilizan)
+const lookCache = new Map(), avatarFor = look => { const key = lookKey(look); let m = lookCache.get(key); if (!m || m.parent) { m = createCharacter(cleanLook(look)); if (!lookCache.has(key)) lookCache.set(key, m); } return m; };
+function swapBody(look) { scene.remove(body); body = createCharacter(look); scene.add(body); body.sync(athlete); }
+function setHero(id) { roster.choose(id); hero = roster.current; setBody(hero.look); athlete.rebody(); swapBody(hero.look); abilities.set = new Set(hero.abilities); abilities.save(); retune(); hud.buildDock(); }
+// Vista previa en el menú sin cambiar todavía de personaje (solo el aspecto)
+function previewLook(look) { setBody(look); athlete.rebody(); swapBody(look); }
+let adT = null; const announce = () => { if (room?.pub && room.isHost) net.announceRoom({ code: room.code, level: room.level?.name || '', mode: room.level?.mode, players: room.peers.size + 1, host: room.me.name }).catch(() => { }); };
+function leaveRoom() { if (!room) return; const r = room; room = null; clearInterval(adT); if (r.pub && r.isHost) net.closeRoom(r.code); r.leave(); for (const m of avatars.values()) scene.remove(m); avatars.clear(); hud.players(null); hud.tags([]); }
+async function host(l, prof, o = {}) { leaveRoom(); const r = new Room(newCode(), { ...prof, look: hero.look, name: prof.name || hero.name }, cb); await r.join(l.lab ? l : { ...sanitize(l), ...(l._ckey ? { _ckey: l._ckey } : {}) }); room = r; r.pub = !!o.pub; if (r.pub) { announce(); adT = setInterval(announce, 30000); } from = 'net'; play(l); hud.players(room, netOk); }
 async function join(code, prof) {
-  leaveRoom(); const r = new Room(code, prof, cb); const got = new Promise((ok, no) => { pendingLevel = ok; setTimeout(() => no(new Error('No hay nadie en esa sala')), 6000); }); got.catch(() => { });
+  leaveRoom(); const r = new Room(code, { ...prof, look: hero.look, name: prof.name || hero.name }, cb); const got = new Promise((ok, no) => { pendingLevel = ok; setTimeout(() => no(new Error('No hay nadie en esa sala')), 6000); }); got.catch(() => { });
   try { await r.join(null); const l = await got; room = r; from = 'net'; play(l); hud.players(room, netOk); } catch (e) { r.leave(); for (const m of avatars.values()) scene.remove(m); avatars.clear(); throw e; } finally { pendingLevel = null; }
 }
 function startRace() { restart(); countdown = 3.999; room?.zero(); hud.players(room, netOk); }
 
 const hud = new HUD(document.getElementById('hud'), { input, slots, abilities, sense, tuning, spawns: () => world.spawns, spawn, view, pause, save, exit, restart, upgrades: () => { const f = from; home('up'); from = f; }, next: () => { const l = nextLevel(); if (l) play(l); }, testing: () => testing, room: () => room, levels: allLevels, race: () => { if (room?.isHost) { room.send('race', {}); startRace(); } }, roomLevel: id => { const l = allLevels().find(x => x.id === id); if (l && room?.isHost) { const s = l.lab ? l : sanitize(l); room.setLevel(s); load(s); pause(false); hud.players(room, netOk); } } });
-const menu = new Menu(ui, { progress, lib, upgrades, rank, upgraded: retune, viewer: () => viewerOpen(), play, edit, exportLevel, host, join, tint: c => body.tint(COLORS[c]), say: t => hud.say(t) });
+const menu = new Menu(ui, { progress, lib, upgrades, rank, net, upgraded: retune, viewer: () => viewerOpen(), play, edit, exportLevel, host, join, roster, setHero: id => setHero(id), preview: look => previewLook(look), say: t => hud.say(t) });
 const viewer = new Viewer(ui, { scene, tuning: () => eff, exit: () => home() });
 const editor = new Editor(edRoot, { stage, camera, canvas, lib, exportLevel, say: t => hud.say(t), test: l => { body.visible = true; play(l, { test: true }); }, exit: () => home('create') });
 input.onEsc = () => { if (app === 'viewer') return home(); if (app === 'play' && !hud.end.classList.contains('on')) pause(!paused); else if (app === 'menu' && menu.view !== 'home') menu.show('home'); };
@@ -106,7 +116,7 @@ function rules(dt) {
     } else if (e.type === 'star') { const s = world.live(world.stars[e.i]); dust({ x: s.x, y: s.y, z: s.z }, 14, 1.4); } else if (e.type === 'check') hud.say('Punto de control');
     else if (e.type === 'target') { cam.spotY = run.spot.y; hud.bigText(e.lvl >= 5 ? 'Perfecto' : e.lvl >= 4 ? 'Objetivo' : 'Objetivo, por poco', e.lvl >= 4 ? '#8fd694' : '#f2c14e'); } else if (e.type === 'fail') hud.bigText(e.why, '#ef6a5a');
     else if (e.type === 'retry') { control.reset(); sense.clear(); athlete.reset(e.spot); athlete.side = Math.sin(e.spot.yaw) < 0 ? -1 : 1; trail.length = 0; } else if (e.type === 'zone') hud.say('Objetivo conseguido');
-    else if (e.type === 'finish') { const r = e.result, rec = testing ? false : progress.add(level.id, r); doneT = 1.5; run.record = rec; run.place = testing ? -1 : rank.add(level.id, { name: menu.prof.name || 'Atleta', score: r.score, stars: r.stars, t: Date.now() }); if (!testing) upgrades.earn(r.stars * 100); if (room) { room.finish(r); hud.players(room, netOk); } }
+    else if (e.type === 'finish') { const r = e.result, rec = testing ? false : progress.add(level.id, r); doneT = 1.5; run.record = rec; run.place = testing ? -1 : rank.add(level.id, { name: menu.prof.name || 'Atleta', score: r.score, stars: r.stars, t: Date.now() }); if (!testing) upgrades.earn(r.stars * 100); if (level._ckey && r.task && (!level.rules.score || r.score >= level.rules.score)) net.postScore(level._ckey, r, menu.prof.name || hero.name).then(() => hud.say('Has entrado en la clasificación del nivel'), () => hud.say('No se pudo enviar tu marca')); if (room) { room.finish(r); hud.players(room, netOk); } }
   }
 }
 function resize() { const w = innerWidth, h = innerHeight; renderer.setPixelRatio(Math.min(devicePixelRatio, quality)); renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
@@ -151,5 +161,5 @@ function frame(now) {
   input.flush(); renderer.render(scene, camera); requestAnimationFrame(frame);
 }
 // acceso para depurar desde la consola
-const lab = window.__lab = { athlete, control, slots, abilities, sense, get world() { return world; }, get run() { return run; }, upgrades, rank, eff, viewer, get room() { return room; }, get app() { return app; }, tuning, cam, hud, menu, editor, stage, scene, spawn, view, play, edit, home, allLevels, host, join, script: null, renderer, camera, body, step: (dt, inp) => { simulate(dt, inp); events(); }, ctl: (dt, inp, held) => { for (let i = 0; i < 4; i++) athlete.update(dt / 4, control.drive(inp, new Set(held))); events(); rules(dt); }, setSlow: v => slow = v, setPaused: v => paused = v, GRADES };
-home(); requestAnimationFrame(t => { last = t; frame(t); document.getElementById('load').classList.add('off'); });
+const lab = window.__lab = { athlete, control, slots, abilities, sense, get world() { return world; }, get run() { return run; }, upgrades, rank, eff, viewer, get room() { return room; }, roster, setHero, get body() { return body; }, get app() { return app; }, tuning, cam, hud, menu, editor, stage, scene, spawn, view, play, edit, home, allLevels, host, join, script: null, renderer, camera, body, step: (dt, inp) => { simulate(dt, inp); events(); }, ctl: (dt, inp, held) => { for (let i = 0; i < 4; i++) athlete.update(dt / 4, control.drive(inp, new Set(held))); events(); rules(dt); }, setSlow: v => slow = v, setPaused: v => paused = v, GRADES };
+home(roster.chosen ? 'home' : 'chars'); requestAnimationFrame(t => { last = t; frame(t); document.getElementById('load').classList.add('off'); });

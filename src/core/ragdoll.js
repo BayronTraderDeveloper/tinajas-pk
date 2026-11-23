@@ -2,7 +2,7 @@
 // tono muscular que se apaga y contacto con fricción/rebote según la superficie.
 import { Quaternion } from 'three';
 import { V, clamp, qBasisYX, qBasisYZ, qEuler } from './mathx.js';
-import { IDX, BONES } from './body.js';
+import { IDX, BONES, BODY } from './body.js';
 
 const FOOT_Q = qEuler(-15, 0, 0); // la punta queda 15° por debajo del eje del pie
 const DEF = [ // nombre, hueso, desplazamiento local, radio, masa
@@ -43,11 +43,11 @@ export class Ragdoll {
   }
   // Arranca con la velocidad exacta que llevaba el cuerpo (lineal + angular)
   start(sk, rootP, rootQ, com, vel, omega, brace) {
-    const pts = (s, P, Q) => DEF.map(d => V(...d[2]).applyQuaternion(s.q[IDX[d[1]]]).add(s.pos[IDX[d[1]]]).applyQuaternion(Q).add(P));
+    const k = BODY.w; this.r = DEF.map(d => d[3] * k); const pts = (s, P, Q) => DEF.map(d => V(...d[2]).multiplyScalar(k).applyQuaternion(s.q[IDX[d[1]]]).add(s.pos[IDX[d[1]]]).applyQuaternion(Q).add(P));
     const now = pts(sk, rootP, rootQ), tp = pts(brace, V(), new Quaternion());
     const dist = (A, a, b) => A[N[a]].distanceTo(A[N[b]]);
     this.links = LINKS.map(([a, b, k]) => [N[a], N[b], dist(now, a, b), k]);
-    this.min = MIN;
+    this.min = MIN.map(([a, b, d]) => [a, b, d * BODY.k]);
     this.tone = TONE.map(([a, b]) => [N[a], N[b], dist(tp, a, b)]);
     for (let i = 0; i < this.n; i++) {
       this.x[i].copy(now[i]);

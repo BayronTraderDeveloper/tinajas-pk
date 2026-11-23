@@ -20,7 +20,7 @@ test('datos hostiles o rotos no rompen nada', () => {
   for (const x of [null, 5, 'x', [], { items: 'no' }, { items: [null, 1, { t: 'nada' }, { t: 'block', x: 'abc', w: -5, h: 1e9 }, { t: '__proto__' }, { t: 'constructor' }], size: { x0: NaN, x1: 'inf' }, name: { a: 1 }, id: '<img src=x>', theme: 'toString' }, { mode: '3d', items: Array(2000).fill({ t: 'block' }) }]) { const l = sanitize(x); assert.ok(l.items.length <= 300); assert.match(l.id, /^[\w-]+$/); assert.ok(['gym', 'park', 'roof'].includes(l.theme)); const w = buildWorld(l); for (const b of w.boxes) assert.ok([b.c.x, b.c.y, b.c.z, b.h.x, b.h.y, b.h.z].every(Number.isFinite)); assert.deepEqual(sanitize(l), l); }
   assert.deepEqual(floorSpans(0, 10, [{ x: 3, w: 2 }, { x: 4, w: 2 }]), [[0, 2], [5, 10]]);
 });
-test('laboratorio desde datos: mismas posiciones de siempre', () => { const w = buildLab(); assert.equal(w.spawns.length, 9); assert.equal(w.tramps[0].y, .95); const b = w.boxes.find(q => q.id === 'rampart'); assert.equal(b.c.x, 73); assert.equal(w.x1, 104); assert.equal(w.boxes.filter(q => q.id === 'step').length, 11); });
+test('laboratorio desde datos: mismas posiciones de siempre', () => { const w = buildLab(); assert.equal(w.spawns.length, 10); assert.equal(w.tramps[0].y, .95); const b = w.boxes.find(q => q.id === 'rampart'); assert.equal(b.c.x, 73); assert.equal(w.x1, 104); assert.equal(w.boxes.filter(q => q.id === 'step').length, 11); });
 
 for (const l of LEVELS_2D) test(`nivel 2D ${l.name}: cada objetivo tiene varias jugadas que caen de pie`, () => {
   const o = solve(l); for (const z of o) { const good = z.wins.filter(w => w.lvl >= 4).length; assert.ok(good >= 2, `${l.id} objetivo ${z.i + 1}: ${good} limpias de ${z.n}`); }

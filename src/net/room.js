@@ -3,13 +3,14 @@ import { pack, toB64, fromB64 } from './codec.js';
 import { openTransport } from './transport.js';
 import { sanitize } from '../core/levels.js';
 import { LAB } from '../core/maps.js';
+import { cleanLook } from '../core/characters.js';
 export const COLORS = ['#e9ecef', '#f2b84b', '#63b3e4', '#8fd694', '#e58fb5', '#b39ddb', '#ef8a62', '#5cc9b8'], MAX = 8, HZ = 20;
 const ABC = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789', rid = n => Array.from(crypto.getRandomValues(new Uint8Array(n)), b => ABC[b % ABC.length]).join('');
 export const newCode = () => rid(5), cleanCode = s => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
 export const cleanName = s => String(s ?? '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 16) || 'Atleta';
 const fin = (v, lo, hi) => Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : null;
 export class Room {
-  constructor(code, me, cb, open = openTransport) { this.code = code; this.cb = cb; this.open = open; this.me = { id: rid(10), name: cleanName(me.name), color: me.color | 0, at: Date.now() }; this.peers = new Map(); this.buf = []; this.acc = 0; this.sent = 0; this.idle = 0; this.level = null; this.board = new Map(); this.budget = new Map(); }
+  constructor(code, me, cb, open = openTransport) { this.code = code; this.cb = cb; this.open = open; this.me = { id: rid(10), name: cleanName(me.name), color: me.color | 0, at: Date.now(), look: cleanLook(me.look) }; this.peers = new Map(); this.buf = []; this.acc = 0; this.sent = 0; this.idle = 0; this.level = null; this.board = new Map(); this.budget = new Map(); }
   async join(level) { this.level = level; this.creator = !!level; this.tr = await this.open(this.code, this.me, { message: m => this.message(m), peers: l => this.onPeers(l), state: ok => this.cb.state?.(ok) }); if (!level) this.ask(); return this; }
   ask() { if (this.level || this.closed) return; this.send('ask', {}); this.askT = setTimeout(() => this.ask(), 900); }
   send(k, d) { this.tr?.send({ k, f: this.me.id, ...d }); }
@@ -18,7 +19,7 @@ export class Room {
   get isHost() { return this.host === this.me.id; }
   onPeers(list) {
     const ids = new Set();
-    for (const p of list) { if (!p || typeof p.id !== 'string' || p.id === this.me.id || p.id.length > 24 || ids.size >= MAX - 1) continue; ids.add(p.id); if (!this.peers.has(p.id)) { const q = { id: p.id, name: cleanName(p.name), color: Math.abs(p.color | 0) % COLORS.length, at: Number.isFinite(p.at) ? p.at : Date.now(), snaps: [], off: null, delay: 250 }; this.peers.set(p.id, q); this.cb.join?.(q); } }
+    for (const p of list) { if (!p || typeof p.id !== 'string' || p.id === this.me.id || p.id.length > 24 || ids.size >= MAX - 1) continue; ids.add(p.id); if (!this.peers.has(p.id)) { const q = { id: p.id, name: cleanName(p.name), look: cleanLook(p.look), color: Math.abs(p.color | 0) % COLORS.length, at: Number.isFinite(p.at) ? p.at : Date.now(), snaps: [], off: null, delay: 250 }; this.peers.set(p.id, q); this.cb.join?.(q); } }
     for (const id of [...this.peers.keys()]) if (!ids.has(id)) { const q = this.peers.get(id); this.peers.delete(id); this.board.delete(id); this.cb.leave?.(q); }
     this.cb.change?.();
   }
@@ -26,8 +27,8 @@ export class Room {
   message(m, now = performance.now()) {
     if (this.closed || !m || typeof m !== 'object' || typeof m.f !== 'string' || m.f === this.me.id) return; const p = this.peers.get(m.f); if (!p || !this.allow(m.f, now)) return;
     if (m.k === 's') this.onState(p, m, now);
-    else if (m.k === 'ask') { if (this.level && (this.isHost || this.creator)) this.send('level', { level: this.level }); }
-    else if (m.k === 'level') { if (m.f !== this.host && this.level) return; const l = m.level?.id === 'lab' ? LAB : sanitize(m.level); this.level = l; this.zero(); clearTimeout(this.askT); this.cb.level?.(l, p); }
+    else if (m.k === 'ask') { if (this.level && (this.isHost || this.creator)) this.send('level', { level: this.level, ckey: this.level?._ckey }); }
+    else if (m.k === 'level') { if (m.f !== this.host && this.level) return; const l = m.level?.id === 'lab' ? LAB : { ...sanitize(m.level), ...(typeof m.ckey === 'string' && /^[0-9a-f]{64}:[\w-]{1,40}$/.test(m.ckey) ? { _ckey: m.ckey } : {}) }; this.level = l; this.zero(); clearTimeout(this.askT); this.cb.level?.(l, p); }
     else if (m.k === 'land') { const lvl = fin(m.lvl, 0, 5); if (lvl !== null) this.cb.feed?.(p, String(m.name || '').replace(/[<>]/g, '').slice(0, 60), lvl); }
     else if (m.k === 'pts') { const n = fin(m.n, 0, 9999999); if (n !== null) { p.pts = n; this.cb.change?.(); } }
     else if (m.k === 'fin') { const t = fin(m.time, 0, 3600), s = fin(m.stars, 1, 3); if (t !== null && s !== null) { this.record(p.id, p.name, t, s, fin(m.score, 0, 9999999) || 0); this.cb.finish?.(p, t, s); } }
@@ -37,7 +38,7 @@ export class Room {
   points(n) { this.me.pts = n; this.send('pts', { n: Math.round(n) }); }
   zero() { this.me.pts = 0; for (const p of this.peers.values()) p.pts = 0; this.board.clear(); }
   finish(r) { this.record(this.me.id, this.me.name, r.time, r.stars, r.score || 0); this.send('fin', { time: Math.round(r.time * 1000) / 1000, stars: r.stars, score: r.score || 0 }); }
-  setLevel(l) { this.level = l; this.zero(); this.send('level', { level: l }); }
+  setLevel(l) { this.level = l; this.zero(); this.send('level', { level: l, ckey: l?._ckey }); }
   // Envío: pocas y grandes. Con más gente, menos mensajes por segundo (cuota del servidor).
   get rate() { const n = this.peers.size + 1; return Math.max(2, Math.min(6, 100 / (n * n))); }
   tick(dt, a, now = performance.now()) {

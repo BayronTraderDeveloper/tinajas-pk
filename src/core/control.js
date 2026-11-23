@@ -1,6 +1,7 @@
 // Control directo en el aire: el truco gira SOLO mientras se mantiene pulsado.
 // Al soltar, el cuerpo se abre y frena (con inercia). El jugador decide cuándo soltar para caer de pie.
 import { clamp, DEG, V, UP, smooth } from './mathx.js';
+import { BODY } from './body.js';
 import { ACRO, FAMILY, TWMAX, acroParams, axisOf, twistStart, variantName } from './acro.js';
 // axis: eje simple · vec: eje propio [lateral, frente, vertical] (fuera de eje) · tw: grados de twist según el giro
 const ramp = (a, b, deg) => { const f = t => deg * smooth((t - a) / (b - a)); return t => Math.floor(t / 360) * deg + f(t % 360); };   // se repite en cada vuelta
@@ -58,9 +59,9 @@ export class AirControl {
   // Grados que aún recorrerá si suelta ahora: se abre y frena hasta parar
   stopAngle(k) {
     const a = this.a, T = a.T, h = .01; let ang = 0;
-    if (k === 'twist') { let L = Math.abs(a.hTwist), t = 0; while (L > 0 && t < 1) { ang += L / (a.Itwist || 1.4) * h; L -= T.airTwistTorque * 1.8 * h; t += h; } return ang / DEG; }
-    const Io = (k === 'x' && this.mv.I) || I_OPEN; let L = Math.abs(this.spinL(k)), t = 0; const I0 = a.Iflip || Io, tEnd = Math.max(.05, a.ttg ?? 1);
-    while (L > 0 && t < tEnd) { const I = Io + (I0 - Io) * Math.exp(-Math.max(0, t - .05) / .085); ang += L / I * h; L -= T.airBrakeTorque * brakeFor(I, this.mixed) * h; t += h; }
+    if (k === 'twist') { let L = Math.abs(a.hTwist), t = 0; while (L > 0 && t < 1) { ang += L / (a.Itwist || 1.4) * h; L -= T.airTwistTorque * 1.8 * BODY.Iw * h; t += h; } return ang / DEG; }
+    const Io = ((k === 'x' && this.mv.I) || I_OPEN) * BODY.I; let L = Math.abs(this.spinL(k)), t = 0; const I0 = a.Iflip || Io, tEnd = Math.max(.05, a.ttg ?? 1);
+    while (L > 0 && t < tEnd) { const I = Io + (I0 - Io) * Math.exp(-Math.max(0, t - .05) / .085); ang += L / I * h; L -= T.airBrakeTorque * BODY.I * brakeFor(I / BODY.I, this.mixed) * h; t += h; }
     return ang / DEG;
   }
   // held: conjunto de trucos que se están manteniendo. Fuera del aire no hacen nada.
@@ -96,7 +97,7 @@ export class AirControl {
       if (k === 'x' && !this.id) continue; const ax = this.axis(k), L = this.spinL(k), s = this.mode[k]; let c = null;
       if (s) {
         const tk = k === 'x' && mv.tuckAfter && this.th() % 360 > mv.tuckAfter, lay = this.mixed || (k === 'x' && !tk);
-        const Lw = this.want[k] * (lay ? clamp(I, 4.2, 12.5) : clamp(I, 4.2, 5.8) * (k === 'side' ? .92 : 1)); c = clamp((s * Lw - L) / 12, -1, 1); o.boost = 9;
+        const B = BODY.I, Lw = this.want[k] * (lay ? clamp(I, 4.2 * B, 12.5 * B) : clamp(I, 4.2 * B, 5.8 * B) * (k === 'side' ? .92 : 1)); c = clamp((s * Lw - L) / (12 * B), -1, 1); o.boost = 9;
         if (k === 'x') { if (tk) o.tuck = 1; } else o.tuck = Math.max(o.tuck, o.pike || this.mixed ? 0 : 1);
         o.mx *= .3; o.mz *= .3; if (k === 'x' && mv.travel && !o.dir && !o.dirZ && a.launchSpeed < 2.2) { o.travel = mv.travel; o.travelSide = mv.side && a.armedSide; }
       } else if (this.target[k] !== null) {

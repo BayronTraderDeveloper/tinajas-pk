@@ -4,13 +4,11 @@ import { Vector3, Quaternion, Matrix3 } from 'three';
 import { V, qEuler, qLog, qExp } from './mathx.js';
 
 export const MASS = 75;
-export const HIP_H = 0.94;                 // altura de la pelvis de pie
-export const THIGH = 0.42, SHIN = 0.40, ANKLE_H = 0.07;
+// Medidas del atleta de referencia (1,78 m). setBody() las escala para cada personaje.
+export let HIP_H = 0.94, THIGH = 0.42, SHIN = 0.40, ANKLE_H = 0.07, ARM_A = .285, ARM_B = .26, COM_H = .92, TOTAL_MASS = 0;
+export const BODY = { k: 1, w: 1, build: 0, height: 1.78, I: 1, Iw: 1 };   // I: inercia relativa al atleta de referencia (giros), Iw: para el twist
 const S = [];
-const bone = (name, parent, off, mass, com, len, r) => {
-  const m = mass * MASS, perp = m * (len * len / 12 + r * r / 4), ax = m * r * r / 2;
-  S.push({ name, parent, off: V(...off), m, com: V(...com), I: [perp, ax, perp] });
-};
+const bone = (name, parent, off, mass, com, len, r) => { S.push({ name, parent, off: V(...off), m: 0, com: V(...com), I: [0, 0, 0], base: { off: [...off], mass, com: [...com], len, r } }); };
 bone('hips', null, [0, 0, 0], .112, [0, 0, 0], .18, .14);
 bone('spine', 'hips', [0, .11, 0], .163, [0, .08, 0], .2, .13);
 bone('chest', 'spine', [0, .17, 0], .16, [0, .12, 0], .24, .14);
@@ -28,11 +26,10 @@ for (const s of [1, -1]) {
 export const BONES = S;
 export const IDX = Object.fromEntries(S.map((b, i) => [b.name, i]));
 S.forEach(b => { b.p = b.parent === null ? -1 : IDX[b.parent]; });
-export const TOTAL_MASS = S.reduce((a, b) => a + b.m, 0);
 
 // Puntos de contacto del cuerpo contra el mundo
 export const CONTACTS = [];
-const cp = (b, o, r, kind) => CONTACTS.push({ b: IDX[b], o: V(...o), r, kind });
+const cp = (b, o, r, kind) => CONTACTS.push({ b: IDX[b], o: V(...o), r, kind, base: [o, r] });
 for (const k of ['L', 'R']) {
   cp('foot' + k, [0, -.05, -.05], .02, 'foot'); cp('foot' + k, [0, -.05, .16], .02, 'foot');
   cp('shin' + k, [0, 0, 0], .055, 'knee');
@@ -43,6 +40,14 @@ cp('hips', [0, 0, -.06], .10, 'hips'); cp('hips', [0, 0, .04], .10, 'hips');
 cp('chest', [0, .1, .02], .13, 'chest'); cp('chest', [0, .1, -.04], .11, 'back');
 cp('head', [0, .1, .01], .105, 'head');
 
+// Altura (m) y complexión (0 delgado · 1 musculoso): longitudes, anchura, masas, inercias y contactos
+export function setBody({ height = 1.78, build = 0 } = {}) {
+  const k = height / 1.78, w = k * (1 + .1 * build), dens = 1 + .22 * build; Object.assign(BODY, { k, w, build, height });
+  for (const b of S) { const B = b.base; b.off.set(B.off[0] * w, B.off[1] * k, B.off[2] * w); b.com.set(B.com[0] * w, B.com[1] * k, B.com[2] * w); b.m = B.mass * MASS * k * k * k * dens; const L = B.len * k, r = B.r * w * (1 + .08 * build); b.I = [b.m * (L * L / 12 + r * r / 4), b.m * r * r / 2, b.m * (L * L / 12 + r * r / 4)]; }
+  for (const c of CONTACTS) { c.o.set(c.base[0][0] * w, c.base[0][1] * k, c.base[0][2] * w); c.r = c.base[1] * w; }
+  HIP_H = .94 * k; THIGH = .42 * k; SHIN = .40 * k; ANKLE_H = .07 * k; ARM_A = .285 * k; ARM_B = .26 * k; COM_H = .92 * k; TOTAL_MASS = S.reduce((a, b) => a + b.m, 0);
+  const m0 = S.reduce((a, b) => a + b.base.mass * MASS, 0); BODY.I = TOTAL_MASS / m0 * k * k; BODY.Iw = TOTAL_MASS / m0 * w * w;
+}
 const _v = V(), _q = new Quaternion();
 export class Skeleton {
   constructor() {
@@ -104,3 +109,5 @@ export class Skeleton {
   }
 }
 S.forEach(b => { b.leg = /thigh|shin|foot/.test(b.name); });
+
+setBody();
